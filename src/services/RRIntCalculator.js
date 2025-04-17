@@ -1,22 +1,16 @@
-import { Subject } from 'rxjs'
+import BaseCalculator from './BaseCalculator'
 
-export default class RRIntCalculator {
-  constructor(device, opts, maxRRIntervals = 1000) {
-    this.device = device
-    this.opts = opts
-    this.pulsesNumber = opts.rrIntervals || 100
-    this.maxRRIntervals = maxRRIntervals
-
-    this.subscription = null
+export default class RRIntCalculator extends BaseCalculator {
+  constructor(device, options = {}) {
+    super(device, options)
+    this.pulsesNumber = options.rrIntervals || 100
+    this.maxRRIntervals = options.maxRRIntervals || 1000
     this.data = []
-    this.metricValue = 0
-
-    this.metricSubject = new Subject()
-
-    this.init()
+    this.unit = options.unit || 'ms'
+    this.precision = options.precision || 2
   }
 
-  init() {
+  setupSubscription() {
     if (this.device && this.device.observeRRInterval) {
       this.subscription = this.device
         .observeRRInterval()
@@ -29,7 +23,8 @@ export default class RRIntCalculator {
   handleRrInterval(rri) {
     if (this.validateRrInterval(rri)) {
       this.addRrInterval(rri)
-      this.calculateMetric()
+      const value = this.calculate()
+      this.valueSubject.next(value)
     }
   }
 
@@ -53,20 +48,19 @@ export default class RRIntCalculator {
     return this.data.slice(-n)
   }
 
-  calculateMetric() {
-    throw new Error('calculateMetric() must be implemented by subclass')
+  // Override in child classes
+  calculate() {
+    throw new Error('calculate() must be implemented by subclass')
+    return 0
   }
 
+  // For backward compatibility
   getMetricObservable() {
-    return this.metricSubject.asObservable()
-  }
-
-  destroy() {
-    if (this.subscription) {
-      this.subscription.unsubscribe()
-      this.subscription = null
+    // Initialize subscription if it doesn't exist
+    if (!this.subscription) {
+      this.subscribe()
     }
-    this.metricSubject.complete()
+    return this.valueSubject.asObservable()
   }
 }
 

@@ -1,17 +1,25 @@
 <template>
   <div>
-    <p>
-      <b>CV:</b>
-      {{ value.toFixed(2) }}% - Mean: {{meanValue.toFixed(2)}}%
-    </p>
+    <MetricDisplay 
+      label="CV"
+      :value="value"
+      :meanValue="meanValue"
+      :stdDevValue="stdDevValue"
+      :unit="unit"
+      :precision="precision"
+    />
   </div>
 </template>
 
 <script>
 import CvCalculator from '../services/CVCalculator.js'
 import MetricMixin from '../mixins/MetricMixin.js'
+import MetricDisplay from './MetricDisplay.vue'
 
 export default {
+  components: {
+    MetricDisplay
+  },
   mixins: [MetricMixin],
   data() {
     return {

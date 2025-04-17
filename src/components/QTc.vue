@@ -1,7 +1,7 @@
 <template>
   <div>
     <MetricDisplay 
-      label="RMSSD"
+      label="QTc"
       :value="value"
       :meanValue="meanValue"
       :stdDevValue="stdDevValue"
@@ -12,7 +12,7 @@
 </template>
 
 <script>
-import RmssdCalculator from '../services/RMSSDCalculator.js'
+import QtcCalculator from '../services/QTcCalculator.js'
 import MetricMixin from '../mixins/MetricMixin.js'
 import MetricDisplay from './MetricDisplay.vue'
 
@@ -23,12 +23,11 @@ export default {
   mixins: [MetricMixin],
   data() {
     return {
-      calculatorClass: RmssdCalculator
+      calculatorClass: QtcCalculator
     }
   }
 }
 </script>
 
 <style scoped>
-</style>
-
+</style> 

@@ -3,10 +3,12 @@ import { opts } from '../services/store'
 export default {
   data() {
     return {
-      opts:  opts,
+      opts: opts,
       value: 0,
-      calculator:   null,
+      calculator: null,
       subscription: null,
+      unit: '',
+      precision: 2
     }
   },
   props: ['device'],
@@ -17,7 +19,9 @@ export default {
         this.reset()
         if (newDevice && this.calculatorClass) {
           this.calculator = new this.calculatorClass(newDevice, this.opts)
-          this.subscription = this.calculator.getMetricObservable().subscribe(metric => {
+          this.unit = this.calculator.unit
+          this.precision = this.calculator.precision
+          this.subscription = this.calculator.subscribe().subscribe(metric => {
             this.value = metric
             this.addMetricValue(metric) // for MetricHistoryMixin
           })
@@ -27,8 +31,14 @@ export default {
   },
   methods: {
     reset() {
-      this.calculator && (this.calculator.destroy(), this.calculator = null)
-      this.subscription && (this.subscription.unsubscribe(), this.subscription = null)
+      if (this.calculator) {
+        this.calculator.destroy()
+        this.calculator = null
+      }
+      if (this.subscription) {
+        this.subscription.unsubscribe()
+        this.subscription = null
+      }
     },
   },
   beforeDestroy() {

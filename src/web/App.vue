@@ -17,6 +17,7 @@
       <MxDMn :device=device />
       <AMo50 :device=device />
       <CV :device=device />
+      <QTc :device=device />
 
       <HeartRateChart :device=device />
 
@@ -31,8 +32,12 @@
 import log from '@/log.js'
 
 import {PairService, ConnectService} from '../web_bluetooth.js'
+import QTc from '../components/QTc.vue'
 
 export default {
+  components: {
+    QTc
+  },
 
   data() {
     return {

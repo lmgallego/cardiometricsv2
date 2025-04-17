@@ -8,6 +8,7 @@
 <script>
 import log from '@/log'
 import Plotly from 'plotly.js-dist-min'
+import EcgService from '../services/Ecg.js'
 
 export default {
   data() {
@@ -16,11 +17,15 @@ export default {
       ecgTime: [],
       plotInitialized: false,
       maxPoints: 1000, // Maximum number of points to display
-      samplingRate: 130, // ECG sampling rate in Hz
       updateInterval: 200, // Chart update interval in milliseconds
-      buffer: [], // Buffer to store incoming samples
-      bufferTime: [], // Buffer to store corresponding time values
-      subscription: null,
+      ecgService: null,
+      ecgSubscription: null,
+      rPeakSubscription: null,
+      qPointSubscription: null,
+      tEndSubscription: null,
+      rPeaks: [], // For visualization of R peaks
+      qPoints: [], // For visualization
+      tEndPoints: [], // For visualization
       updateTimer: null // Timer for scheduled chart updates
     }
   },
@@ -30,14 +35,31 @@ export default {
     device: {
       immediate: true,
       handler(newDevice, oldDevice) {
-        // Unsubscribe from previous device's ECG observable
-        if (this.subscription) {
-          this.subscription.unsubscribe();
-          this.subscription = null;
-        }
+        this.cleanup();
+        
         if (this.device) {
-          // Subscribe to the new device's ECG data
-          this.subscription = this.device.observeEcg().subscribe(ecg => this.handleEcgData(ecg));
+          // Initialize the ECG service
+          this.ecgService = new EcgService(this.device);
+          
+          // Subscribe to ECG data
+          this.ecgSubscription = this.ecgService
+            .getEcgObservable()
+            .subscribe(data => this.handleEcgData(data));
+            
+          // Subscribe to R peaks for visualization
+          this.rPeakSubscription = this.ecgService
+            .getRPeakObservable()
+            .subscribe(data => this.handleRPeak(data));
+            
+          // Subscribe to Q points for visualization
+          this.qPointSubscription = this.ecgService
+            .getQPointObservable()
+            .subscribe(data => this.handleQPoint(data));
+            
+          // Subscribe to T-end points for visualization
+          this.tEndSubscription = this.ecgService
+            .getTEndObservable()
+            .subscribe(data => this.handleTEnd(data));
         }
       }
     }
@@ -50,33 +72,125 @@ export default {
   },
 
   beforeDestroy() {
-    // Clean up subscription and timer when the component is destroyed
-    if (this.subscription) {
-      this.subscription.unsubscribe();
-    }
+    this.cleanup();
     if (this.updateTimer) {
       clearInterval(this.updateTimer);
     }
   },
-
+  
   methods: {
-    handleEcgData(ecg) {
-      // 'ecg' is an array of ECG samples
-      // Append new samples to buffer
-      this.buffer.push(...ecg);
-
-      // Generate corresponding time values for the new samples
-      const timeStep = 1 / this.samplingRate; // Time between samples
-      const lastTime = this.ecgTime.length > 0 ? this.ecgTime[this.ecgTime.length - 1] : 0;
-      const bufferTimeStart = this.bufferTime.length > 0 ? this.bufferTime[this.bufferTime.length - 1] : lastTime;
-
-      for (let i = 0; i < ecg.length; i++) {
-        this.bufferTime.push(bufferTimeStart + timeStep * (i + 1));
+    cleanup() {
+      // Clean up subscriptions
+      if (this.ecgSubscription) {
+        this.ecgSubscription.unsubscribe();
+        this.ecgSubscription = null;
+      }
+      
+      if (this.rPeakSubscription) {
+        this.rPeakSubscription.unsubscribe();
+        this.rPeakSubscription = null;
+      }
+      
+      if (this.qPointSubscription) {
+        this.qPointSubscription.unsubscribe();
+        this.qPointSubscription = null;
+      }
+      
+      if (this.tEndSubscription) {
+        this.tEndSubscription.unsubscribe();
+        this.tEndSubscription = null;
+      }
+      
+      // Clean up service
+      if (this.ecgService) {
+        this.ecgService.destroy();
+        this.ecgService = null;
+      }
+      
+      // Reset data arrays
+      this.ecgData = [];
+      this.ecgTime = [];
+      this.rPeaks = [];
+      this.qPoints = [];
+      this.tEndPoints = [];
+    },
+    
+    handleEcgData(data) {
+      // Add new samples to the arrays
+      this.ecgData.push(...data.samples);
+      this.ecgTime.push(...data.times);
+      
+      // Limit the length of the data arrays to maxPoints
+      if (this.ecgData.length > this.maxPoints) {
+        const removeCount = this.ecgData.length - this.maxPoints;
+        this.ecgData.splice(0, removeCount);
+        this.ecgTime.splice(0, removeCount);
+        
+        // Also adjust point indices
+        this.rPeaks = this.rPeaks.filter(point => point.index >= removeCount)
+          .map(point => ({ ...point, index: point.index - removeCount }));
+        
+        this.qPoints = this.qPoints.filter(point => point.index >= removeCount)
+          .map(point => ({ ...point, index: point.index - removeCount }));
+        
+        this.tEndPoints = this.tEndPoints.filter(point => point.index >= removeCount)
+          .map(point => ({ ...point, index: point.index - removeCount }));
+      }
+    },
+    
+    handleRPeak(data) {
+      // Store R peak for visualization
+      const relativeIndex = this.ecgData.length - (this.ecgService.ecgSamples.length - data.index);
+      if (relativeIndex >= 0 && relativeIndex < this.ecgData.length) {
+        this.rPeaks.push({
+          index: relativeIndex,
+          time: this.ecgTime[relativeIndex],
+          value: this.ecgData[relativeIndex]
+        });
+        
+        // Limit number of points stored
+        if (this.rPeaks.length > 10) {
+          this.rPeaks.shift();
+        }
+      }
+    },
+    
+    handleQPoint(data) {
+      // Store Q point for visualization
+      const relativeIndex = this.ecgData.length - (this.ecgService.ecgSamples.length - data.index);
+      if (relativeIndex >= 0 && relativeIndex < this.ecgData.length) {
+        this.qPoints.push({
+          index: relativeIndex,
+          time: this.ecgTime[relativeIndex],
+          value: this.ecgData[relativeIndex]
+        });
+        
+        // Limit number of points stored
+        if (this.qPoints.length > 5) {
+          this.qPoints.shift();
+        }
+      }
+    },
+    
+    handleTEnd(data) {
+      // Store T-end point for visualization
+      const relativeIndex = this.ecgData.length - (this.ecgService.ecgSamples.length - data.index);
+      if (relativeIndex >= 0 && relativeIndex < this.ecgData.length) {
+        this.tEndPoints.push({
+          index: relativeIndex,
+          time: this.ecgTime[relativeIndex],
+          value: this.ecgData[relativeIndex]
+        });
+        
+        // Limit number of points stored
+        if (this.tEndPoints.length > 5) {
+          this.tEndPoints.shift();
+        }
       }
     },
 
     initializePlot() {
-      const trace = {
+      const ecgTrace = {
         x: this.ecgTime,
         y: this.ecgData,
         type: 'scatter',
@@ -84,8 +198,36 @@ export default {
         name: 'ECG Signal',
         line: { color: 'red', width: 1 }
       };
+      
+      const rPeaksTrace = {
+        x: [],
+        y: [],
+        type: 'scatter',
+        mode: 'markers',
+        name: 'R Peaks',
+        marker: { color: 'purple', size: 10, symbol: 'circle' }
+      };
+      
+      const qPointsTrace = {
+        x: [],
+        y: [],
+        type: 'scatter',
+        mode: 'markers',
+        name: 'Q Points',
+        marker: { color: 'blue', size: 8, symbol: 'circle' }
+      };
+      
+      const tEndPointsTrace = {
+        x: [],
+        y: [],
+        type: 'scatter',
+        mode: 'markers',
+        name: 'T-end Points',
+        marker: { color: 'green', size: 8, symbol: 'circle' }
+      };
+      
       const layout = {
-        title: 'ECG Waveform',
+        title: 'ECG Waveform with Q, R & T Points',
         xaxis: {
           title: 'Time (s)',
           range: [0, 5], // Initial range
@@ -96,38 +238,35 @@ export default {
           title: 'Amplitude (µV)',
           showgrid: true,
           zeroline: false
+        },
+        legend: {
+          orientation: 'h'
         }
       };
-      Plotly.newPlot(this.$refs.ecgChart, [trace], layout, { responsive: true });
+      
+      Plotly.newPlot(this.$refs.ecgChart, [ecgTrace, rPeaksTrace, qPointsTrace, tEndPointsTrace], layout, { responsive: true });
       this.plotInitialized = true;
     },
 
     updatePlot() {
-      // Check if there is data in the buffer
-      const numNewSamples = this.buffer.length;
-      if (numNewSamples === 0) {
+      if (!this.plotInitialized || this.ecgData.length === 0) {
         return; // Nothing to update
       }
 
-      // Append buffered data to main data arrays
-      this.ecgData.push(...this.buffer);
-      this.ecgTime.push(...this.bufferTime);
-
-      // Clear the buffers
-      this.buffer = [];
-      this.bufferTime = [];
-
-      // Limit the length of the data arrays to maxPoints
-      if (this.ecgData.length > this.maxPoints) {
-        const removeCount = this.ecgData.length - this.maxPoints;
-        this.ecgData.splice(0, removeCount);
-        this.ecgTime.splice(0, removeCount);
-      }
+      // Prepare point data for plotting
+      const rPeaksX = this.rPeaks.map(p => p.time);
+      const rPeaksY = this.rPeaks.map(p => p.value);
+      
+      const qPointsX = this.qPoints.map(p => p.time);
+      const qPointsY = this.qPoints.map(p => p.value);
+      
+      const tEndPointsX = this.tEndPoints.map(p => p.time);
+      const tEndPointsY = this.tEndPoints.map(p => p.value);
 
       // Update the chart with new data
       const update = {
-        x: [this.ecgTime],
-        y: [this.ecgData]
+        x: [this.ecgTime, rPeaksX, qPointsX, tEndPointsX],
+        y: [this.ecgData, rPeaksY, qPointsY, tEndPointsY]
       };
 
       // Update the x-axis range to keep the latest data in view

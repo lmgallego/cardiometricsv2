@@ -1,17 +1,25 @@
 <template>
   <div>
-    <p>
-      <b>pNN50:</b>
-      {{ value.toFixed(2) }}% - Mean: {{meanValue.toFixed(2)}}%
-    </p>
+    <MetricDisplay 
+      label="pNN50"
+      :value="value"
+      :meanValue="meanValue"
+      :stdDevValue="stdDevValue"
+      :unit="unit"
+      :precision="precision"
+    />
   </div>
 </template>
 
 <script>
 import pNN50Calculator from '../services/pNN50Calculator.js'
 import MetricMixin from '../mixins/MetricMixin.js'
+import MetricDisplay from './MetricDisplay.vue'
 
 export default {
+  components: {
+    MetricDisplay
+  },
   mixins: [MetricMixin],
   data() {
     return {

@@ -12,6 +12,9 @@ const acc2_rate    = 416;  //0xA0;//acc2_rate=208;//26Hz, 52Hz, 104Hz, 208Hz, 41
 const acc_res      = 0x10; //hex(16) 16bit resolution
 const ACC_START    = [0x02, 0x01, acc_range, 0x00, 0x00, 0x01, acc_rate, 0x00, 0x01, 0x01, acc_res, 0x00]
 
+// ECG sampling rate in Hz (from 0x00, 0x01 = 130Hz)
+const ECG_SAMPLING_RATE = 130
+
 const ECG_START =  new Uint8Array([
   0x02, // Start measurement
   0x00, // ECG stream ID
@@ -39,6 +42,11 @@ export default class H10 extends BaseDevice {
     PMD_CONTROL,
     PMD_DATA,
   ]
+
+  // Getter for ECG sampling rate
+  get ecgSamplingRate() {
+    return ECG_SAMPLING_RATE
+  }
 
   observeEcg() {
     return this.observes.ecg ||= this.observeNotifications(PMD_SERVICE, PMD_DATA, {

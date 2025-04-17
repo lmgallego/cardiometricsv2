@@ -100,5 +100,15 @@ export default class BaseDevice {
     return this.characs[charac] ||= await (await this.fetchService(service)).getCharacteristic(charac)
   }
 
+  /**
+   * Returns the device's ECG sampling rate in Hz.
+   * Must be implemented by device subclasses that support ECG.
+   * @throws {Error} If the device doesn't support ECG or if the subclass doesn't implement this method.
+   * @returns {number} The ECG sampling rate in Hz.
+   */
+  get ecgSamplingRate() {
+    throw new Error('ecgSamplingRate getter must be implemented by device classes that support ECG functionality')
+  }
+
 }
 

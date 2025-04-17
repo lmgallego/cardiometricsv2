@@ -1,4 +1,4 @@
-import { mean } from 'mathjs'
+import { mean, std } from 'mathjs'
 
 export default {
   data() {
@@ -8,6 +8,7 @@ export default {
       currentPeriod: [],
       totalArrays:   0,
       meanValue:     0,
+      stdDevValue:   0,
     }
   },
   methods: {
@@ -20,6 +21,7 @@ export default {
         this.currentPeriod = []
       }
       this.calculateMean()
+      this.calculateStdDev()
     },
 
     calculateMean() {
@@ -27,6 +29,14 @@ export default {
         this.meanValue = mean(this.rawHistory)
       } else {
         this.meanValue = 0
+      }
+    },
+
+    calculateStdDev() {
+      if (this.rawHistory.length > 1) {
+        this.stdDevValue = std(this.rawHistory)
+      } else {
+        this.stdDevValue = 0
       }
     },
 
@@ -49,6 +59,7 @@ export default {
       }
 
       this.calculateMean()
+      this.calculateStdDev()
     },
 
     resetHistory() {
@@ -57,6 +68,7 @@ export default {
       this.currentPeriod = []
       this.totalArrays = 0
       this.meanValue = 0
+      this.stdDevValue = 0
     }
   },
   watch: {

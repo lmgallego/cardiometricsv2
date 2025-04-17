@@ -1,14 +1,25 @@
 <template>
   <div>
-    <p><b>MxDMn:</b> {{ value.toFixed(2) }} ms - Mean: {{meanValue.toFixed(2)}}</p>
+    <MetricDisplay 
+      label="MxDMn"
+      :value="value"
+      :meanValue="meanValue"
+      :stdDevValue="stdDevValue"
+      :unit="unit"
+      :precision="precision"
+    />
   </div>
 </template>
 
 <script>
 import MxdmnCalculator from '../services/MxDMnCalculator.js'
 import MetricMixin from '../mixins/MetricMixin.js'
+import MetricDisplay from './MetricDisplay.vue'
 
 export default {
+  components: {
+    MetricDisplay
+  },
   mixins: [MetricMixin],
   data() {
     return {
