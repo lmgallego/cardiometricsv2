@@ -82,7 +82,11 @@ export default class MetricCalculator {
    * Calculate standard deviation of samples.
    */
   calculateStdDev(samples = this.recentSamples) {
+    // Need at least 2 samples for a meaningful standard deviation
     if (samples.length < 2) return 0
+    
+    // Use the uncorrected sample standard deviation formula (n divisor instead of n-1)
+    // This gives a better estimate for HRV metrics like SDNN
     return std(samples, 'uncorrected')
   }
 
