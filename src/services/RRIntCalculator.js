@@ -1,13 +1,12 @@
-import BaseCalculator from './BaseCalculator'
+import MetricCalculator from './MetricCalculator'
 
-export default class RRIntCalculator extends BaseCalculator {
+export default class RRIntCalculator extends MetricCalculator {
   constructor(device, options = {}) {
-    super(device, options)
-    this.pulsesNumber = options.rrIntervals || 100
-    this.maxRRIntervals = options.maxRRIntervals || 1000
-    this.data = []
-    this.unit = options.unit || 'ms'
-    this.precision = options.precision || 2
+    super(device, {
+      ...options,
+      unit: options.unit || 'ms',
+      precision: options.precision || 2
+    })
   }
 
   setupSubscription() {
@@ -22,7 +21,7 @@ export default class RRIntCalculator extends BaseCalculator {
 
   handleRrInterval(rri) {
     if (this.validateRrInterval(rri)) {
-      this.addRrInterval(rri)
+      this.addSample(rri)
       const value = this.calculate()
       this.valueSubject.next(value)
     }
@@ -32,35 +31,15 @@ export default class RRIntCalculator extends BaseCalculator {
     return rri >= 300 && rri <= 2000
   }
 
-  addRrInterval(rri) {
-    this.data.push(rri)
-    if (this.data.length > this.maxRRIntervals) {
-      this.data.shift()
-    }
-  }
-
-  /**
-   * Provides the most recent R-R intervals based on pulsesNumber.
-   * Subclasses can access this.recentRrs directly.
-   */
+  // Alias for backward compatibility
   get recentRrs() {
-    const n = Math.min(this.pulsesNumber, this.data.length)
-    return this.data.slice(-n)
+    return this.recentSamples
   }
 
   // Override in child classes
   calculate() {
     throw new Error('calculate() must be implemented by subclass')
     return 0
-  }
-
-  // For backward compatibility
-  getMetricObservable() {
-    // Initialize subscription if it doesn't exist
-    if (!this.subscription) {
-      this.subscribe()
-    }
-    return this.valueSubject.asObservable()
   }
 }
 

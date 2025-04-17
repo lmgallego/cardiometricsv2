@@ -1,5 +1,4 @@
 import RRIntCalculator from './RRIntCalculator'
-import { std } from 'mathjs'
 
 export default class SdnnCalculator extends RRIntCalculator {
   constructor(device, options = {}) {
@@ -11,11 +10,8 @@ export default class SdnnCalculator extends RRIntCalculator {
   }
 
   calculate() {
-    const recentRrs = this.recentRrs
-    if (recentRrs.length >= 2) {
-      return std(recentRrs, 'uncorrected')
-    }
-    return 0
+    // Using the shared method from MetricCalculator
+    return this.calculateStdDev(this.recentRrs)
   }
 }
 

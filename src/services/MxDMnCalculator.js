@@ -12,13 +12,13 @@ export default class MxdmnCalculator extends RRIntCalculator {
   calculate() {
     const recentRrs = this.recentRrs
 
-    if (recentRrs.length >= 2) {
-      const sum = recentRrs.reduce((acc, val) => acc + val, 0)
-      const mean = sum / recentRrs.length
-      const deviations = recentRrs.map(rri => Math.abs(rri - mean))
-      return deviations.reduce((acc, val) => acc + val, 0) / deviations.length
+    if (recentRrs.length < 2) {
+      return 0
     }
-    return 0
+
+    const mean = this.calculateMean(recentRrs)
+    const deviations = recentRrs.map(rri => Math.abs(rri - mean))
+    return deviations.reduce((acc, val) => acc + val, 0) / deviations.length
   }
 }
 

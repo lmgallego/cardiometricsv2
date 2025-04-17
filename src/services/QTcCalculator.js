@@ -1,8 +1,8 @@
-import BaseCalculator from './BaseCalculator'
+import MetricCalculator from './MetricCalculator'
 import { sqrt } from 'mathjs'
 import EcgService from './Ecg.js'
 
-export default class QtcCalculator extends BaseCalculator {
+export default class QtcCalculator extends MetricCalculator {
   constructor(device, options = {}) {
     super(device, {
       ...options,
@@ -97,15 +97,6 @@ export default class QtcCalculator extends BaseCalculator {
     // RR is in ms, so convert to seconds
     const rrInSeconds = recentRrInterval / 1000
     return recentQtInterval / sqrt(rrInSeconds)
-  }
-
-  // For backward compatibility
-  getMetricObservable() {
-    // Initialize subscription if it doesn't exist
-    if (!this.subscription) {
-      this.subscribe()
-    }
-    return this.valueSubject.asObservable()
   }
 
   destroy() {
