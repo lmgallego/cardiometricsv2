@@ -1,52 +1,54 @@
 <template>
-  <div class="stress-display">
-    <div class="stress-header">
-      <h2>Stress Index</h2>
-      <div class="stress-value" :class="stressLevelClass">
-        {{ stressValue }}%
-        <div class="stress-label">{{ stressLevelLabel }}</div>
+  <div class="bg-white rounded-xl shadow-md p-4">
+    <div class="flex justify-between items-center mb-4">
+      <h2 class="text-xl font-bold">Stress Index</h2>
+      <div class="text-right">
+        <div :class="stressLevelColorClass" class="text-2xl font-bold">
+          {{ stressValue }}%
+        </div>
+        <div class="text-sm">{{ stressLevelLabel }}</div>
       </div>
     </div>
     
-    <div class="nervous-system-balance">
-      <h3>Nervous System Balance</h3>
-      <div class="balance-indicators">
-        <div class="indicator">
-          <div class="indicator-label">SNS</div>
-          <div class="indicator-bar-container">
-            <div class="indicator-bar sns-bar" :style="{ width: `${snsPercentage}%` }"></div>
+    <div class="mb-4">
+      <h3 class="text-lg font-semibold mb-2">Nervous System Balance</h3>
+      <div class="space-y-2">
+        <div class="flex items-center">
+          <div class="w-10 font-bold">SNS</div>
+          <div class="flex-grow h-3 bg-gray-200 rounded-full mx-2 overflow-hidden">
+            <div class="h-full bg-orange-500 rounded-full" :style="{ width: `${snsPercentage}%` }"></div>
           </div>
-          <div class="indicator-value">{{ snsValue }}</div>
+          <div class="w-8 text-right font-bold">{{ snsValue }}</div>
         </div>
         
-        <div class="indicator">
-          <div class="indicator-label">PSNS</div>
-          <div class="indicator-bar-container">
-            <div class="indicator-bar psns-bar" :style="{ width: `${psnsPercentage}%` }"></div>
+        <div class="flex items-center">
+          <div class="w-10 font-bold">PSNS</div>
+          <div class="flex-grow h-3 bg-gray-200 rounded-full mx-2 overflow-hidden">
+            <div class="h-full bg-blue-500 rounded-full" :style="{ width: `${psnsPercentage}%` }"></div>
           </div>
-          <div class="indicator-value">{{ psnsValue }}</div>
+          <div class="w-8 text-right font-bold">{{ psnsValue }}</div>
         </div>
       </div>
       
-      <div class="balance-description">
-        <div v-if="isBalanced" class="balanced">Your nervous system is balanced</div>
-        <div v-else-if="isSnsDominant" class="sns-dominant">Sympathetic dominance (fight-or-flight)</div>
-        <div v-else class="psns-dominant">Parasympathetic dominance (rest-and-digest)</div>
+      <div :class="balanceColorClass" class="mt-2 p-2 rounded-md bg-gray-100 text-center text-sm">
+        <div v-if="isBalanced">Your nervous system is balanced</div>
+        <div v-else-if="isSnsDominant">Sympathetic dominance (fight-or-flight)</div>
+        <div v-else>Parasympathetic dominance (rest-and-digest)</div>
       </div>
     </div>
     
-    <div class="stress-metrics">
-      <div class="metric">
-        <div class="metric-label">LF/HF Ratio</div>
-        <div class="metric-value">{{ lfhfRatio }}</div>
+    <div class="grid grid-cols-3 gap-2 pt-3 border-t border-gray-200">
+      <div class="text-center">
+        <div class="text-xs text-gray-600">LF/HF Ratio</div>
+        <div class="font-bold">{{ lfhfRatio }}</div>
       </div>
-      <div class="metric">
-        <div class="metric-label">SDNN</div>
-        <div class="metric-value">{{ sdnnValue }}ms</div>
+      <div class="text-center">
+        <div class="text-xs text-gray-600">SDNN</div>
+        <div class="font-bold">{{ sdnnValue }}ms</div>
       </div>
-      <div class="metric">
-        <div class="metric-label">RMSSD</div>
-        <div class="metric-value">{{ rmssdValue }}ms</div>
+      <div class="text-center">
+        <div class="text-xs text-gray-600">RMSSD</div>
+        <div class="font-bold">{{ rmssdValue }}ms</div>
       </div>
     </div>
   </div>
@@ -74,10 +76,10 @@ export default {
   },
   
   computed: {
-    stressLevelClass() {
-      if (this.stressValue < 30) return 'low-stress'
-      if (this.stressValue < 60) return 'moderate-stress'
-      return 'high-stress'
+    stressLevelColorClass() {
+      if (this.stressValue < 30) return 'text-green-500'
+      if (this.stressValue < 60) return 'text-orange-500'
+      return 'text-red-500'
     },
     
     stressLevelLabel() {
@@ -103,6 +105,12 @@ export default {
     
     isSnsDominant() {
       return this.snsValue > this.psnsValue + 15
+    },
+    
+    balanceColorClass() {
+      if (this.isBalanced) return 'text-green-600'
+      if (this.isSnsDominant) return 'text-orange-600'
+      return 'text-blue-600'
     }
   },
   
@@ -149,133 +157,4 @@ export default {
     }
   }
 }
-</script>
-
-<style scoped>
-.stress-display {
-  padding: 15px;
-  background-color: #fff;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  margin-bottom: 20px;
-}
-
-.stress-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 15px;
-}
-
-.stress-value {
-  font-size: 28px;
-  font-weight: bold;
-  text-align: right;
-}
-
-.stress-label {
-  font-size: 14px;
-  font-weight: normal;
-}
-
-.low-stress {
-  color: #4caf50;
-}
-
-.moderate-stress {
-  color: #ff9800;
-}
-
-.high-stress {
-  color: #f44336;
-}
-
-.nervous-system-balance {
-  margin-bottom: 20px;
-}
-
-.balance-indicators {
-  margin-top: 10px;
-}
-
-.indicator {
-  display: flex;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.indicator-label {
-  width: 40px;
-  font-weight: bold;
-}
-
-.indicator-bar-container {
-  flex-grow: 1;
-  height: 12px;
-  background-color: #f0f0f0;
-  border-radius: 6px;
-  margin: 0 10px;
-  overflow: hidden;
-}
-
-.indicator-bar {
-  height: 100%;
-  border-radius: 6px;
-}
-
-.sns-bar {
-  background-color: #ff5722;
-}
-
-.psns-bar {
-  background-color: #2196f3;
-}
-
-.indicator-value {
-  width: 30px;
-  text-align: right;
-  font-weight: bold;
-}
-
-.balance-description {
-  margin-top: 10px;
-  padding: 8px;
-  border-radius: 6px;
-  background-color: #f5f5f5;
-  text-align: center;
-}
-
-.balanced {
-  color: #4caf50;
-}
-
-.sns-dominant {
-  color: #ff5722;
-}
-
-.psns-dominant {
-  color: #2196f3;
-}
-
-.stress-metrics {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 20px;
-  padding-top: 15px;
-  border-top: 1px solid #eee;
-}
-
-.metric {
-  text-align: center;
-}
-
-.metric-label {
-  font-size: 12px;
-  color: #666;
-}
-
-.metric-value {
-  font-weight: bold;
-  margin-top: 5px;
-}
-</style> 
+</script> 

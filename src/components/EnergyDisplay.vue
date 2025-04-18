@@ -1,30 +1,32 @@
 <template>
-  <div class="energy-display">
-    <div class="energy-header">
-      <h2>Energy Level</h2>
-      <div class="energy-value" :class="energyLevelClass">
-        {{ energyValue }}%
-        <div class="energy-label">{{ energyLevelLabel }}</div>
+  <div class="bg-white rounded-xl shadow-md p-4">
+    <div class="flex justify-between items-center mb-4">
+      <h2 class="text-xl font-bold">Energy Level</h2>
+      <div class="text-right">
+        <div :class="energyLevelColorClass" class="text-2xl font-bold">
+          {{ energyValue }}%
+        </div>
+        <div class="text-sm">{{ energyLevelLabel }}</div>
       </div>
     </div>
 
     <!-- Optional: Display contributing raw metrics -->
-    <div class="energy-metrics">
-      <div class="metric">
-        <div class="metric-label">PSNS Score</div>
-        <div class="metric-value">{{ psnsValue }}</div>
+    <div class="grid grid-cols-4 gap-2 pt-3 border-t border-gray-200">
+      <div class="text-center">
+        <div class="text-xs text-gray-600">PSNS Score</div>
+        <div class="font-bold">{{ psnsValue }}</div>
       </div>
-      <div class="metric">
-        <div class="metric-label">SDNN</div>
-        <div class="metric-value">{{ sdnnValue }}ms</div>
+      <div class="text-center">
+        <div class="text-xs text-gray-600">SDNN</div>
+        <div class="font-bold">{{ sdnnValue }}ms</div>
       </div>
-      <div class="metric">
-        <div class="metric-label">RMSSD</div>
-        <div class="metric-value">{{ rmssdValue }}ms</div>
+      <div class="text-center">
+        <div class="text-xs text-gray-600">RMSSD</div>
+        <div class="font-bold">{{ rmssdValue }}ms</div>
       </div>
-      <div class="metric">
-        <div class="metric-label">Total Power</div>
-        <div class="metric-value">{{ totalPowerValue }}</div>
+      <div class="text-center">
+        <div class="text-xs text-gray-600">Total Power</div>
+        <div class="font-bold">{{ totalPowerValue }}</div>
       </div>
     </div>
   </div>
@@ -52,11 +54,11 @@ export default {
   },
 
   computed: {
-    energyLevelClass() {
+    energyLevelColorClass() {
       // Define classes based on energy levels (adjust thresholds as needed)
-      if (this.energyValue < 35) return 'low-energy'
-      if (this.energyValue < 70) return 'medium-energy'
-      return 'high-energy'
+      if (this.energyValue < 35) return 'text-red-500'
+      if (this.energyValue < 70) return 'text-orange-500'
+      return 'text-green-500'
     },
 
     energyLevelLabel() {
@@ -91,67 +93,4 @@ export default {
     }
   }
 }
-</script>
-
-<style scoped>
-.energy-display {
-  padding: 15px;
-  background-color: #fff;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  margin-bottom: 20px;
-}
-
-.energy-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px; /* Increased margin */
-}
-
-.energy-value {
-  font-size: 28px;
-  font-weight: bold;
-  text-align: right;
-}
-
-.energy-label {
-  font-size: 14px;
-  font-weight: normal;
-}
-
-/* Define colors for energy levels */
-.low-energy {
-  color: #f44336; /* Red for low energy */
-}
-
-.medium-energy {
-  color: #ff9800; /* Orange for medium energy */
-}
-
-.high-energy {
-  color: #4caf50; /* Green for high energy */
-}
-
-.energy-metrics {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 15px;
-  padding-top: 15px;
-  border-top: 1px solid #eee;
-}
-
-.metric {
-  text-align: center;
-}
-
-.metric-label {
-  font-size: 12px;
-  color: #666;
-}
-
-.metric-value {
-  font-weight: bold;
-  margin-top: 5px;
-}
-</style> 
+</script> 

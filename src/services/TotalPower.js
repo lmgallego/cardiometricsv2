@@ -6,12 +6,9 @@ export default class TotalPower extends FrequencyDomain {
   }
 
   calculate() {
-    // Calculate each power band individually
-    const vlfPower = this.calculateBandPower(this.recentRrs, 0.003, 0.04);
-    const lfPower = this.calculateBandPower(this.recentRrs, 0.04, 0.15);
-    const hfPower = this.calculateBandPower(this.recentRrs, 0.15, 0.4);
-    
-    // Total power should be the sum of VLF, LF, and HF
-    return vlfPower + lfPower + hfPower;
+    // Calculate total power by calling calculateBandPower once for the full range (VLF+LF+HF).
+    // This avoids redundant calculations compared to summing separate band powers.
+    // Note: Standard Total Power often includes 0-0.4Hz or similar.
+    return this.calculateBandPower(this.recentRrs, 0.003, 0.4);
   }
 } 
