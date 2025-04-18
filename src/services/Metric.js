@@ -17,6 +17,31 @@ export default class Metric {
     this.data = []
     this.maxSamples = options.maxSamples || 1000
     this.pulsesNumber = options.rrIntervals || 100
+    this.lastVisibleTime = Date.now()
+    
+    // Set up visibility change listener
+    if (typeof document !== 'undefined') {
+      this.visibilityHandler = this.handleVisibilityChange.bind(this)
+      document.addEventListener('visibilitychange', this.visibilityHandler)
+    }
+  }
+
+  /**
+   * Handle visibility change events
+   */
+  handleVisibilityChange() {
+    const now = Date.now();
+    
+    if (document.hidden) {
+      // Tab is now hidden
+      this.lastVisibleTime = now;
+    } else {
+      // Tab is visible again
+      // Ensure we only emit an update with the configured number of intervals
+      // This prevents the spike by respecting the configured window size
+      const value = this.calculate();
+      this.valueSubject.next(value);
+    }
   }
 
   /**
@@ -57,6 +82,11 @@ export default class Metric {
   destroy() {
     try {
       this.unsubscribe()
+      
+      // Remove visibility change listener
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', this.visibilityHandler)
+      }
       
       // Only complete the subject if it exists and hasn't been completed
       if (this.valueSubject && !this.valueSubject.closed) {

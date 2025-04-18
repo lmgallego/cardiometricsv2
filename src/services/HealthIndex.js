@@ -34,7 +34,7 @@ export default class HealthIndex extends FrequencyDomain {
       historyMaxSize: 20
     }
 
-    // Current health value
+    // Current health value - starting at 100 by default
     this.value = 100
   }
 
@@ -109,11 +109,13 @@ export default class HealthIndex extends FrequencyDomain {
 
   calculateImmunity(sdnn, rmssd, energyValue) {
     // Higher HRV metrics and energy correlate with better immune function
-    const sdnnComponent = Math.min(100, (sdnn / 60) * 100) * 0.35
-    const rmssdComponent = Math.min(100, (rmssd / 40) * 100) * 0.35
+    // More optimistic scaling for SDNN and RMSSD
+    const sdnnComponent = Math.min(100, (sdnn / 50) * 100) * 0.35
+    const rmssdComponent = Math.min(100, (rmssd / 30) * 100) * 0.35
     const energyComponent = energyValue * 0.3
     
-    return sdnnComponent + rmssdComponent + energyComponent
+    // Apply a minimum base value
+    return Math.max(60, sdnnComponent + rmssdComponent + energyComponent)
   }
 
   calculateRecovery(stressValue, energyValue) {
@@ -121,7 +123,8 @@ export default class HealthIndex extends FrequencyDomain {
     const stressComponent = Math.max(0, 100 - stressValue) * 0.6
     const energyComponent = energyValue * 0.4
     
-    return stressComponent + energyComponent
+    // Apply a minimum base value
+    return Math.max(65, stressComponent + energyComponent)
   }
 
   calculateBalance(stressValue, energyValue) {
@@ -129,13 +132,14 @@ export default class HealthIndex extends FrequencyDomain {
     const stressComponent = Math.max(0, 100 - stressValue) * 0.5
     const energyComponent = energyValue * 0.5
     
-    // Bonus for having both values in optimal range
+    // Larger bonus for having both values in optimal range
     let balanceBonus = 0
-    if (stressValue < 40 && energyValue > 60) {
-      balanceBonus = 10
+    if (stressValue < 60 && energyValue > 40) {
+      balanceBonus = 15
     }
     
-    return stressComponent + energyComponent + balanceBonus
+    // Apply a minimum base value
+    return Math.max(70, stressComponent + energyComponent + balanceBonus)
   }
 
   calculateOverallHealth(immunity, recovery, balance, stressValue, energyValue) {
@@ -147,13 +151,16 @@ export default class HealthIndex extends FrequencyDomain {
     const energyWeight = 0.1 // Direct contribution
     
     // Calculate the weighted sum
-    return (
+    const rawScore = (
       (immunity * immunityWeight) +
       (recovery * recoveryWeight) +
       (balance * balanceWeight) +
       ((100 - stressValue) * stressWeight) +
       (energyValue * energyWeight)
     )
+    
+    // Apply a more optimistic scaling
+    return Math.min(100, Math.max(75, rawScore))
   }
 
   updateMetricHistory(metric, value) {
