@@ -6,7 +6,7 @@ export default class HFPower extends FrequencyDomain {
   }
 
   calculate() {
-    // HF power (0.15-0.4 Hz) - related to parasympathetic activity
-    return this.calculateBandPower(this.recentRrs, 0.15, 0.4);
+    // HF power (0.15-0.4 Hz) - reflecting parasympathetic activity
+    return this.calculateMetric(this.calculateBandPower, this.recentRrs, 0.15, 0.4);
   }
 } 

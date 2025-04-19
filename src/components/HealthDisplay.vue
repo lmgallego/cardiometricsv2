@@ -1,35 +1,46 @@
 <template>
-  <div class="bg-white rounded-xl shadow-md p-4">
+  <CardWrapper title="Health Status">
     <!-- Header with title and main health status -->
     <div class="flex justify-between items-center mb-4">
-      <h2 class="text-xl font-bold">Health Status</h2>
+      <div class="text-sm text-gray-500 dark:text-gray-400">Current Status</div>
       <div class="text-right">
-        <div :class="healthColorClass" class="text-2xl font-bold">
+        <div :class="healthColorClass" class="text-3xl font-bold">
           {{ healthValue }}%
         </div>
-        <div class="text-sm">{{ vulnerabilityLabel }}</div>
+        <div class="text-sm text-gray-600 dark:text-gray-300">{{ vulnerabilityLabel }}</div>
+      </div>
+    </div>
+
+    <!-- Health Score Bar -->
+    <div class="mb-4">
+      <div class="w-full h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+        <div
+          class="h-full rounded-full transition-all duration-500"
+          :style="{ width: `${healthValue}%` }"
+          :class="healthScoreBarColorClass"
+        ></div>
       </div>
     </div>
 
     <!-- Main insights based on health status -->
-    <div class="mb-4 p-3 rounded-lg" :class="insightBackgroundClass">
+    <div class="mb-4 p-3 rounded-lg" :class="[insightBackgroundClass, insightTextColorClass]">
       <p class="text-sm">{{ healthInsight }}</p>
       <div class="mt-2 text-xs">
-        Measurement accuracy is <span class="text-green-500 font-semibold">{{ measurementAccuracy }}%</span>
+        Measurement accuracy is <span class="font-semibold" :class="accuracyColorClass">{{ measurementAccuracy }}%</span>
       </div>
     </div>
 
     <!-- Health component scores -->
-    <div class="mb-4">
-      <h3 class="text-lg font-semibold mb-2">Health Components</h3>
+    <div class="mb-4 border-t border-gray-200 dark:border-gray-700 pt-3">
+      <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Health Components</h3>
       
       <!-- Immunity score -->
       <div class="mb-2">
         <div class="flex justify-between items-center mb-1">
-          <div class="text-sm font-medium">Immunity</div>
+          <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Immunity</div>
           <div class="text-sm font-bold" :class="getMetricColor(immunityValue)">{{ immunityValue }}%</div>
         </div>
-        <div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+        <div class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
           <div class="h-full rounded-full" :style="{ width: `${immunityValue}%` }" :class="getMetricBarColor(immunityValue)"></div>
         </div>
       </div>
@@ -37,10 +48,10 @@
       <!-- Recovery score -->
       <div class="mb-2">
         <div class="flex justify-between items-center mb-1">
-          <div class="text-sm font-medium">Recovery</div>
+          <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Recovery</div>
           <div class="text-sm font-bold" :class="getMetricColor(recoveryValue)">{{ recoveryValue }}%</div>
         </div>
-        <div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+        <div class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
           <div class="h-full rounded-full" :style="{ width: `${recoveryValue}%` }" :class="getMetricBarColor(recoveryValue)"></div>
         </div>
       </div>
@@ -48,64 +59,74 @@
       <!-- Autonomic balance score -->
       <div class="mb-2">
         <div class="flex justify-between items-center mb-1">
-          <div class="text-sm font-medium">Autonomic Balance</div>
+          <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Autonomic Balance</div>
           <div class="text-sm font-bold" :class="getMetricColor(balanceValue)">{{ balanceValue }}%</div>
         </div>
-        <div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+        <div class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
           <div class="h-full rounded-full" :style="{ width: `${balanceValue}%` }" :class="getMetricBarColor(balanceValue)"></div>
         </div>
       </div>
     </div>
 
     <!-- Contributing factors section -->
-    <div class="pt-3 border-t border-gray-200">
-      <h3 class="text-sm font-semibold mb-2">Contributing Factors</h3>
+    <div class="pt-3 border-t border-gray-200 dark:border-gray-700">
+      <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Contributing Factors</h3>
       
-      <div class="grid grid-cols-2 gap-4">
+      <div class="grid grid-cols-2 gap-3">
         <!-- Stress level -->
-        <div class="text-center border border-gray-100 rounded-lg p-2">
-          <div class="text-xs text-gray-600">Stress Level</div>
-          <div class="font-bold" :class="getInverseMetricColor(stressValue)">{{ stressValue }}%</div>
+        <div class="text-center bg-gray-50 dark:bg-gray-800 rounded-lg p-2">
+          <div class="text-xs text-gray-500 dark:text-gray-400">Stress Level</div>
+          <div class="font-bold text-gray-800 dark:text-gray-100" :class="getInverseMetricColor(stressValue)">{{ stressValue }}%</div>
         </div>
         
         <!-- Energy level -->
-        <div class="text-center border border-gray-100 rounded-lg p-2">
-          <div class="text-xs text-gray-600">Energy Level</div>
-          <div class="font-bold" :class="getMetricColor(energyValue)">{{ energyValue }}%</div>
+        <div class="text-center bg-gray-50 dark:bg-gray-800 rounded-lg p-2">
+          <div class="text-xs text-gray-500 dark:text-gray-400">Energy Level</div>
+          <div class="font-bold text-gray-800 dark:text-gray-100" :class="getMetricColor(energyValue)">{{ energyValue }}%</div>
         </div>
       </div>
       
       <!-- Heart rate variability metrics -->
-      <div class="grid grid-cols-4 gap-2 mt-2">
-        <div class="text-center">
-          <div class="text-xs text-gray-600">SDNN</div>
-          <div class="font-bold">{{ sdnnValue }}ms</div>
+      <div class="grid grid-cols-4 gap-2 mt-3">
+        <div class="text-center bg-gray-50 dark:bg-gray-800 rounded-lg p-2">
+          <div class="text-xs text-gray-500 dark:text-gray-400">SDNN</div>
+          <div class="font-bold text-gray-800 dark:text-gray-100">{{ sdnnValue }}ms</div>
         </div>
-        <div class="text-center">
-          <div class="text-xs text-gray-600">RMSSD</div>
-          <div class="font-bold">{{ rmssdValue }}ms</div>
+        <div class="text-center bg-gray-50 dark:bg-gray-800 rounded-lg p-2">
+          <div class="text-xs text-gray-500 dark:text-gray-400">RMSSD</div>
+          <div class="font-bold text-gray-800 dark:text-gray-100">{{ rmssdValue }}ms</div>
         </div>
-        <div class="text-center">
-          <div class="text-xs text-gray-600">LF/HF</div>
-          <div class="font-bold">{{ lfhfValue }}</div>
+        <div class="text-center bg-gray-50 dark:bg-gray-800 rounded-lg p-2">
+          <div class="text-xs text-gray-500 dark:text-gray-400">LF/HF</div>
+          <div class="font-bold text-gray-800 dark:text-gray-100">{{ lfhfValue.toFixed(2) }}</div>
         </div>
-        <div class="text-center">
-          <div class="text-xs text-gray-600">Heart Rate</div>
-          <div class="font-bold">{{ heartRate }}bpm</div>
+        <div class="text-center bg-gray-50 dark:bg-gray-800 rounded-lg p-2">
+          <div class="text-xs text-gray-500 dark:text-gray-400">Heart Rate</div>
+          <div class="font-bold text-gray-800 dark:text-gray-100">{{ heartRate }}bpm</div>
         </div>
       </div>
     </div>
-  </div>
+  </CardWrapper>
 </template>
 
 <script>
 import HealthIndex from '../services/HealthIndex'
 import MetricMixin from '../mixins/MetricMixin'
+import CardWrapper from './CardWrapper.vue'
+import { metrics } from '../services/store.js' // Import central store
 
 export default {
   name: 'HealthDisplay',
-  
+  components: {
+    CardWrapper
+  },
   mixins: [MetricMixin],
+  props: {
+    device: {
+      type: Object,
+      required: true
+    }
+  },
   
   data() {
     return {
@@ -132,8 +153,34 @@ export default {
       measurementAccuracy: 100,
       
       // Set the calculator class
-      calculatorClass: HealthIndex
+      calculatorClass: HealthIndex,
+      metrics: metrics // Add metrics store to data
     }
+  },
+  
+  mounted() { // Added mounted hook
+    // Initialize stress and energy from the central store
+    this.stressValue = Math.round(this.metrics.stressLevel || 0);
+    this.energyValue = Math.round(this.metrics.energyLevel || 0);
+    
+    // Watch the central store for changes
+    Object.defineProperty(this, '$watcherStressLevel', {
+      get: () => this.metrics.stressLevel,
+      set: () => {}
+    });
+    
+    this.$watch('$watcherStressLevel', () => {
+      this.stressValue = Math.round(this.metrics.stressLevel || 0);
+    });
+    
+    Object.defineProperty(this, '$watcherEnergyLevel', {
+      get: () => this.metrics.energyLevel,
+      set: () => {}
+    });
+    
+    this.$watch('$watcherEnergyLevel', () => {
+      this.energyValue = Math.round(this.metrics.energyLevel || 0);
+    });
   },
   
   computed: {
@@ -159,6 +206,32 @@ export default {
         case 4: return 'bg-red-50'
         default: return 'bg-gray-50'
       }
+    },
+    
+    insightTextColorClass() {
+      switch (this.vulnerabilityLevel) {
+        case 0: return 'text-green-800 dark:text-green-100'
+        case 1: return 'text-green-800 dark:text-green-100'
+        case 2: return 'text-yellow-800 dark:text-yellow-100'
+        case 3: return 'text-orange-800 dark:text-orange-100'
+        case 4: return 'text-red-800 dark:text-red-100'
+        default: return 'text-gray-800 dark:text-gray-100'
+      }
+    },
+
+    accuracyColorClass() {
+      switch (this.vulnerabilityLevel) {
+        case 0: return 'text-green-600 dark:text-green-400'
+        case 1: return 'text-green-600 dark:text-green-400'
+        case 2: return 'text-yellow-600 dark:text-yellow-400'
+        case 3: return 'text-orange-600 dark:text-orange-400'
+        case 4: return 'text-red-600 dark:text-red-400'
+        default: return 'text-gray-600 dark:text-gray-400'
+      }
+    },
+
+    healthScoreBarColorClass() {
+      return this.getMetricBarColor(this.healthValue);
     },
     
     healthInsight() {
@@ -198,10 +271,6 @@ export default {
         this.immunityValue = this.getLatestMetric(history.immunity, 0)
         this.recoveryValue = this.getLatestMetric(history.recovery, 0)
         this.balanceValue = this.getLatestMetric(history.balance, 0)
-        
-        // Get contributing factors
-        this.stressValue = this.getLatestMetric(history.stressLevel, 0)
-        this.energyValue = this.getLatestMetric(history.energyLevel, 0)
       }
       
       // Get HRV metrics directly from calculator
@@ -210,9 +279,9 @@ export default {
         this.rmssdValue = Math.round(calculator.rmssdCalculator.calculateRMSSD(calculator.recentRrs))
         
         // Calculate LF/HF ratio
-        const lfPower = calculator.calculateBandPower(calculator.recentRrs, 0.04, 0.15)
-        const hfPower = calculator.calculateBandPower(calculator.recentRrs, 0.15, 0.4)
-        this.lfhfValue = (lfPower && hfPower) ? parseFloat((lfPower / hfPower).toFixed(2)) : 1
+        const lfPower = calculator.lfPowerCalculator.calculateBandPower(calculator.recentRrs, 0.04, 0.15)
+        const hfPower = calculator.hfPowerCalculator.calculateBandPower(calculator.recentRrs, 0.15, 0.4)
+        this.lfhfValue = (lfPower && hfPower > 0) ? parseFloat((lfPower / hfPower).toFixed(2)) : 1
         
         // Calculate heart rate
         this.calculateHeartRate(calculator.recentRrs)
@@ -222,6 +291,7 @@ export default {
       this.measurementAccuracy = 100
     },
     
+    // We still need getLatestMetric for legacy metric history support
     getLatestMetric(metricArray, defaultValue) {
       return (metricArray && metricArray.length > 0) ? 
         Math.round(metricArray[metricArray.length - 1]) : 
@@ -241,6 +311,7 @@ export default {
       this.heartRate = Math.round(60000 / avgRR)
     },
     
+    // Color and styling methods remain important
     getMetricColor(value) {
       // Color classes for metrics (higher is better)
       if (value >= 80) return 'text-green-500'

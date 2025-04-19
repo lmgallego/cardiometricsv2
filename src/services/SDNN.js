@@ -10,7 +10,7 @@ export default class SDNN extends RRInt {
   }
 
   calculate() {
-    // Using the shared method from Metric
-    return this.calculateStdDev(this.recentRrs)
+    // Use the calculateMetric method to simplify implementation
+    return this.calculateMetric(this.calculateStdDev, this.recentRrs);
   }
 } 

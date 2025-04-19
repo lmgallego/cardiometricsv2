@@ -1,7 +1,19 @@
+/* eslint-disable no-unused-vars */
 import Metric from './Metric'
 import { sqrt, median, mean, quantileSeq } from 'mathjs'
 import EcgService from './Ecg.js'
+import { opts } from './store'
 
+/**
+ * QTc (Corrected QT Interval)
+ * 
+ * The QT interval on ECG represents ventricular depolarization and repolarization.
+ * It must be corrected for heart rate because QT varies with heart rate.
+ * 
+ * Implementation supports:
+ * 1. Bazett's formula: QTc = QT/√RR - Historical standard, over-corrects at high HR
+ * 2. Fridericia's formula: QTc = QT/∛RR - Better overall, especially at higher heart rates
+ */
 export default class QTc extends Metric {
   constructor(device, options = {}) {
     super(device, {
@@ -10,6 +22,7 @@ export default class QTc extends Metric {
       precision: 0
     })
     
+    this.opts = opts
     this.pulsesNumber = options.rrIntervals || 100
     
     // Initialize services
@@ -91,6 +104,14 @@ export default class QTc extends Metric {
   }
 
   /**
+   * Override getSamplesForStats to use valueHistory instead of recentSamples
+   * This ensures that mean and std dev calculations work properly for QTc
+   */
+  getSamplesForStats() {
+    return this.valueHistory;
+  }
+
+  /**
    * Remove outliers from a dataset using interquartile range method
    */
   removeOutliers(data) {
@@ -135,7 +156,8 @@ export default class QTc extends Metric {
     return median(filteredQT);
   }
 
-  calculate() {
+  // Calculate QTc using appropriate correction formula
+  calculateQTc() {
     // Need both QT intervals and RR intervals to calculate QTc
     if (!this.qtIntervals || !this.rrIntervals || 
         this.qtIntervals.length === 0 || this.rrIntervals.length === 0) {
@@ -160,6 +182,11 @@ export default class QTc extends Metric {
       // This is less sensitive to heart rate changes
       return qtInterval / Math.cbrt(rrInSeconds);
     }
+  }
+
+  calculate() {
+    // Use the calculateMetric method to simplify implementation and handle history
+    return this.calculateMetric(this.calculateQTc);
   }
 
   destroy() {

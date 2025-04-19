@@ -1,185 +1,241 @@
 <template>
-  <div>
-    <div ref="accelChart" style="width: 100%; height: 600px;"></div>
-  </div>
+  <CardWrapper title="Accelerometer">
+    <div ref="accelerometerChart" style="width: 100%; height: 400px;"></div>
+  </CardWrapper>
 </template>
 
 <script>
 import Plotly from 'plotly.js-dist-min'
-import log from '@/log'
+import CardWrapper from './CardWrapper.vue'
+import themeManager from '../services/ThemeManager.js'
 
 export default {
-  data() {
-    return {
-      currentReading: { x: 0, y: 0, z: 0 },
-      accDataBuffer: [],
-      throttleTimeout: null,
-    };
+  components: {
+    CardWrapper
   },
   props: ['device'],
+  data() {
+    return {
+      axData: [],
+      ayData: [],
+      azData: [],
+      timeData: [],
+      startTime: null,
+      plotInitialized: false,
+      layout: {
+        title: '',
+        margin: { t: 10, r: 10, b: 50, l: 50 },
+        xaxis: {
+          title: 'Time (s)',
+          range: [0, 10],
+          showgrid: true,
+          zeroline: true,
+          color: this.getTextColor()
+        },
+        yaxis: {
+          title: 'Acceleration (g)',
+          range: [-2, 2],
+          showgrid: true,
+          zeroline: true,
+          color: this.getTextColor()
+        },
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        font: {
+          color: this.getTextColor()
+        },
+        legend: {
+          orientation: 'h'
+        }
+      },
+      plotData: [
+        {
+          x: [],
+          y: [],
+          type: 'scatter',
+          mode: 'lines',
+          name: 'X',
+          line: { color: 'red' }
+        },
+        {
+          x: [],
+          y: [],
+          type: 'scatter',
+          mode: 'lines',
+          name: 'Y',
+          line: { color: 'green' }
+        },
+        {
+          x: [],
+          y: [],
+          type: 'scatter',
+          mode: 'lines',
+          name: 'Z',
+          line: { color: 'blue' }
+        }
+      ],
+      config: { responsive: true, displayModeBar: false },
+      subscription: null,
+      themeListener: null
+    }
+  },
+  
+  methods: {
+    getTextColor() {
+      return themeManager.isDarkTheme() ? '#FFFFFF' : '#333333'
+    },
+    
+    updateTheme() {
+      if (!this.plotInitialized || !this.$refs.accelerometerChart) return
+      
+      const update = {
+        'xaxis.color': this.getTextColor(),
+        'yaxis.color': this.getTextColor(),
+        'font.color': this.getTextColor(),
+        'paper_bgcolor': 'rgba(0,0,0,0)',
+        'plot_bgcolor': 'rgba(0,0,0,0)'
+      }
+      
+      Plotly.relayout(this.$refs.accelerometerChart, update)
+    },
+    
+    initializePlot() {
+      Plotly.newPlot(this.$refs.accelerometerChart, this.plotData, this.layout, this.config)
+      this.plotInitialized = true
+    },
+    
+    updateChart(data) {
+      const now = Date.now()
+      if (!this.startTime) this.startTime = now
+      const elapsedTime = (now - this.startTime) / 1000 // seconds
+
+      this.axData.push(data.x)
+      this.ayData.push(data.y)
+      this.azData.push(data.z)
+      this.timeData.push(elapsedTime)
+
+      // Keep only the last 100 data points
+      if (this.timeData.length > 100) {
+        this.timeData.shift()
+        this.axData.shift()
+        this.ayData.shift()
+        this.azData.shift()
+      }
+
+      // Update traces
+      this.plotData[0].x = [...this.timeData]
+      this.plotData[0].y = [...this.axData]
+      this.plotData[1].x = [...this.timeData]
+      this.plotData[1].y = [...this.ayData]
+      this.plotData[2].x = [...this.timeData]
+      this.plotData[2].y = [...this.azData]
+
+      // Adjust x-axis range to show the latest 10 seconds
+      if (this.timeData.length > 0) {
+        const latestTime = this.timeData[this.timeData.length - 1]
+        const xMin = Math.max(0, latestTime - 10)
+        const xMax = latestTime
+        this.layout.xaxis.range = [xMin, xMax]
+      }
+
+      // Redraw the plot if initialized
+      if (this.plotInitialized) {
+        Plotly.react(this.$refs.accelerometerChart, this.plotData, this.layout, this.config)
+      } else {
+        this.initializePlot()
+      }
+    },
+    
+    subscribeToAccelerometer() {
+      if (this.device && this.device.observeAccelerometer) {
+        this.subscription = this.device.observeAccelerometer().subscribe(data => {
+          this.updateChart(data)
+        })
+      } else {
+        console.error('Device does not support observeAccelerometer()')
+      }
+    },
+    
+    resetChart() {
+      this.axData = []
+      this.ayData = []
+      this.azData = []
+      this.timeData = []
+      this.startTime = null
+      this.plotData[0].x = []
+      this.plotData[0].y = []
+      this.plotData[1].x = []
+      this.plotData[1].y = []
+      this.plotData[2].x = []
+      this.plotData[2].y = []
+      this.layout.xaxis.range = [0, 10]
+
+      if (this.plotInitialized) {
+        Plotly.react(this.$refs.accelerometerChart, this.plotData, this.layout, this.config)
+      }
+    }
+  },
+  
   watch: {
     device: {
       immediate: true,
-      handler() {
-        // Subscribe to accelerometer data
-        this.device.observeAccelerometer().subscribe(accArray => {
-          // 'accArray' is an array of accelerometer readings
-          accArray.forEach(reading => {
-            this.accDataBuffer.push(reading);
-          });
-          // Keep only the data from the last 1 second
-          const maxBufferSize = this.device.accSamplingRate || 200; // Assuming 200Hz sampling rate
-          if (this.accDataBuffer.length > maxBufferSize) {
-            this.accDataBuffer.splice(0, this.accDataBuffer.length - maxBufferSize);
-          }
-          // Throttle the updates
-          if (!this.throttleTimeout) {
-            this.throttleTimeout = setTimeout(() => {
-              this.updateChart();
-              this.throttleTimeout = null;
-            }, 1000); // Update once every second
-          }
-        });
-      },
-    },
-  },
-  mounted() {
-    this.initChart();
-  },
-  methods: {
-    initChart() {
-      // Initialize the Plotly 2D chart with arrows for each axis
-      this.plotData = [];
-
-      this.plotLayout = {
-        title: 'Accelerometer Force Vectors (2D)',
-        xaxis: { title: 'Axis', range: [-1.5, 1.5], showgrid: false, zeroline: false },
-        yaxis: { title: 'Acceleration', range: [-1.5, 1.5], showgrid: false, zeroline: false },
-        margin: {
-          l: 50,
-          r: 50,
-          b: 50,
-          t: 50,
-        },
-        showlegend: false,
-        shapes: [], // We will use shapes to draw arrows
-      };
-
-      Plotly.newPlot(this.$refs.accelChart, this.plotData, this.plotLayout);
-    },
-    updateChart() {
-      // Calculate average acceleration over the last 1 second
-      const dataLength = this.accDataBuffer.length;
-      if (dataLength === 0) return;
-
-      let sumX = 0, sumY = 0, sumZ = 0;
-      this.accDataBuffer.forEach(reading => {
-        sumX += reading.x;
-        sumY += reading.y;
-        sumZ += reading.z;
-      });
-
-      const avgReading = {
-        x: sumX / dataLength,
-        y: sumY / dataLength,
-        z: sumZ / dataLength,
-      };
-
-      this.currentReading = avgReading;
-
-      // Normalize the acceleration values for visualization
-      const maxAcceleration = 2048; // Adjust based on your accelerometer's range
-      const scale = 1; // Scaling factor to control arrow lengths in the plot
-
-      // Calculate the scaled acceleration values
-      const xAccel = avgReading.x * scale / maxAcceleration;
-      const yAccel = avgReading.y * scale / maxAcceleration;
-      const zAccel = avgReading.z * scale / maxAcceleration;
-
-      // Clear previous shapes
-      this.plotLayout.shapes = [];
-
-      // Define arrow properties
-      const arrowHeadSize = 0.1; // Size of the arrowhead
-      const arrowProperties = [
-        {
-          axis: 'X',
-          value: xAccel,
-          color: 'red',
-          start: { x: 0, y: 0 },
-          end: { x: xAccel, y: 0 },
-        },
-        {
-          axis: 'Y',
-          value: yAccel,
-          color: 'green',
-          start: { x: 0, y: 0 },
-          end: { x: 0, y: yAccel },
-        },
-        {
-          axis: 'Z',
-          value: zAccel,
-          color: 'blue',
-          start: { x: 0, y: 0 },
-          end: { x: zAccel * Math.cos(Math.PI / 4), y: zAccel * Math.sin(Math.PI / 4) },
-        },
-      ];
-
-      // Update shapes for each arrow
-      arrowProperties.forEach(arrow => {
-        // Draw the arrow line
-        this.plotLayout.shapes.push({
-          type: 'line',
-          x0: arrow.start.x,
-          y0: arrow.start.y,
-          x1: arrow.end.x,
-          y1: arrow.end.y,
-          line: {
-            color: arrow.color,
-            width: 3,
-          },
-        });
-
-        // Calculate arrowhead points
-        const angle = Math.atan2(arrow.end.y - arrow.start.y, arrow.end.x - arrow.start.x);
-        const arrowLength = Math.sqrt(
-          Math.pow(arrow.end.x - arrow.start.x, 2) + Math.pow(arrow.end.y - arrow.start.y, 2)
-        );
-
-        // Only draw arrowhead if length is non-zero
-        if (arrowLength > 0) {
-          const arrowheadPoint1 = {
-            x: arrow.end.x - arrowHeadSize * Math.cos(angle - Math.PI / 6),
-            y: arrow.end.y - arrowHeadSize * Math.sin(angle - Math.PI / 6),
-          };
-          const arrowheadPoint2 = {
-            x: arrow.end.x - arrowHeadSize * Math.cos(angle + Math.PI / 6),
-            y: arrow.end.y - arrowHeadSize * Math.sin(angle + Math.PI / 6),
-          };
-
-          // Draw the arrowhead as a filled polygon
-          this.plotLayout.shapes.push({
-            type: 'path',
-            path: `M ${arrow.end.x},${arrow.end.y} L ${arrowheadPoint1.x},${arrowheadPoint1.y} L ${arrowheadPoint2.x},${arrowheadPoint2.y} Z`,
-            fillcolor: arrow.color,
-            line: {
-              color: arrow.color,
-            },
-          });
+      handler(newDevice, oldDevice) {
+        // Clean up previous device
+        if (this.subscription) {
+          this.subscription.unsubscribe()
+          this.subscription = null
         }
-      });
-
-      // Update the layout with new shapes
-      Plotly.update(this.$refs.accelChart, this.plotData, this.plotLayout);
-
-      // Clear the buffer after updating
-      this.accDataBuffer = [];
-    },
+        
+        this.resetChart()
+        
+        if (newDevice) {
+          this.$nextTick(() => {
+            this.initializePlot()
+            this.subscribeToAccelerometer()
+          })
+        }
+      }
+    }
   },
-};
+  
+  mounted() {
+    // Initialize plot
+    this.initializePlot()
+    
+    // Subscribe to accelerometer if device is already available
+    if (this.device) {
+      this.subscribeToAccelerometer()
+    }
+    
+    // Listen for theme changes
+    this.themeListener = (theme) => {
+      this.updateTheme()
+    }
+    themeManager.addListener(this.themeListener)
+  },
+  
+  beforeDestroy() {
+    if (this.subscription) {
+      this.subscription.unsubscribe()
+      this.subscription = null
+    }
+    
+    // Remove theme listener
+    if (this.themeListener) {
+      themeManager.removeListener(this.themeListener)
+    }
+    
+    if (this.plotInitialized && this.$refs.accelerometerChart) {
+      Plotly.purge(this.$refs.accelerometerChart)
+    }
+  }
+}
 </script>
 
 <style scoped>
-/* Optional styling */
+/* Ensure consistent sizing */
+div {
+  width: 100%;
+}
 </style>
 

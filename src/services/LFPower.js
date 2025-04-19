@@ -7,6 +7,6 @@ export default class LFPower extends FrequencyDomain {
 
   calculate() {
     // LF power (0.04-0.15 Hz) - reflecting both sympathetic and parasympathetic activity
-    return this.calculateBandPower(this.recentRrs, 0.04, 0.15); 
+    return this.calculateMetric(this.calculateBandPower, this.recentRrs, 0.04, 0.15);
   }
 } 

@@ -9,15 +9,20 @@ export default class MxDMn extends RRInt {
     })
   }
 
-  calculate() {
-    const recentRrs = this.recentRrs
-
-    if (recentRrs.length < 2) {
-      return 0
+  // Calculate MxDMn - difference between max and min RR intervals
+  calculateMxDMn(samples) {
+    if (!samples || samples.length < 2) {
+      return 0;
     }
+    
+    const max = Math.max(...samples);
+    const min = Math.min(...samples);
+    
+    return max - min;
+  }
 
-    const mean = this.calculateMean(recentRrs)
-    const deviations = recentRrs.map(rri => Math.abs(rri - mean))
-    return deviations.reduce((acc, val) => acc + val, 0) / deviations.length
+  calculate() {
+    // Use the calculateMetric method with our custom calculation function
+    return this.calculateMetric(this.calculateMxDMn, this.recentRrs);
   }
 } 

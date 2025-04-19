@@ -20,3 +20,73 @@ export const opts = reactive({
   qtcFormula: 'fridericia', // Formula for QTc calculation (bazett or fridericia)
 })
 
+/**
+ * Centralized store for metric values
+ * Used to avoid recalculating metrics across different components
+ * All metric values are stored here and components reference these values
+ */
+export const metrics = reactive({
+  // Time domain metrics
+  sdnn: 0,
+  rmssd: 0,
+  pnn50: 0,
+  mxdmn: 0,
+  amo50: 0,
+  cv: 0,
+  qtc: 0,
+  
+  // Frequency domain metrics
+  totalPower: 0,
+  vlfPower: 0,
+  lfPower: 0,
+  hfPower: 0,
+  lfhfRatio: 0,
+  
+  // Composite/Index Metrics
+  stressLevel: 0,        // Added stress index value
+  energyLevel: 0,        // Added energy index value
+  snsActivity: 0,        // Added SNS (Sympathetic Nervous System) activity
+  psnsActivity: 0,       // Added PSNS (Parasympathetic Nervous System) activity
+  
+  // Device Status & Direct Measurements
+  batteryLevel: 0,       // Added battery percentage
+  heartRate: 0,          // Added current heart rate
+  rrInterval: 0,         // Added latest RR interval
+  
+  // Data for Visualizations/Raw Data Displays
+  heartRateHistory: [],  // Added for heart rate chart
+  ecgData: [],           // Added for ECG display
+  accelerometerData: [], // Added for Accelerometer display (array of {x,y,z})
+  
+  // Mean and standard deviation for each metric
+  means: {
+    sdnn: 0,
+    rmssd: 0,
+    pnn50: 0,
+    mxdmn: 0,
+    amo50: 0,
+    cv: 0,
+    qtc: 0,
+    totalPower: 0,
+    vlfPower: 0,
+    lfPower: 0,
+    hfPower: 0,
+    lfhfRatio: 0
+  },
+  
+  stdDevs: {
+    sdnn: 0,
+    rmssd: 0,
+    pnn50: 0,
+    mxdmn: 0,
+    amo50: 0,
+    cv: 0,
+    qtc: 0,
+    totalPower: 0,
+    vlfPower: 0,
+    lfPower: 0,
+    hfPower: 0,
+    lfhfRatio: 0
+  }
+})
+

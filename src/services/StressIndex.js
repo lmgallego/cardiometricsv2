@@ -4,6 +4,7 @@ import RMSSD from './RMSSD'
 import LFPower from './LFPower'
 import HFPower from './HFPower'
 import TotalPower from './TotalPower'
+import { metrics } from './store.js' // Import central metrics store
 
 /**
  * Enhanced Stress Index calculator based on multiple HRV metrics
@@ -55,6 +56,11 @@ export default class StressIndex extends FrequencyDomain {
     if (this.recentRrs && this.recentRrs.length >= 5) {
       this.value = this.calculate();
       this.valueSubject.next(this.value);
+      metrics.stressLevel = this.value; // Update central store
+      
+      // Also update SNS and PSNS values in the central store
+      metrics.snsActivity = this.getSnsPower();
+      metrics.psnsActivity = this.getPsnsPower();
     }
   }
 
@@ -226,6 +232,67 @@ export default class StressIndex extends FrequencyDomain {
     
     // Apply smoothing with adaptive weights
     return (rawStressIndex * currentWeight) + (lastStressIndex * historyWeight);
+  }
+  
+  // Add helper methods to get SNS and PSNS values for display components
+  getSnsPower() {
+    // For consistency with HealthDisplay, return a value in the range 0-100%
+    if (!this.recentRrs || this.recentRrs.length < 5) {
+      return 0;
+    }
+    
+    try {
+      // Get values from individual metric calculators
+      const sdnn = this.sdnnCalculator.calculateStdDev(this.recentRrs);
+      const rmssd = this.rmssdCalculator.calculateRMSSD(this.recentRrs);
+      
+      // Calculate LF/HF ratio
+      const lfPower = this.lfPowerCalculator.calculateBandPower(this.recentRrs, 0.04, 0.15);
+      const hfPower = this.hfPowerCalculator.calculateBandPower(this.recentRrs, 0.15, 0.4);
+      const lfhfRatio = (lfPower && hfPower) ? (lfPower / hfPower) : 1;
+      
+      // Normalize metrics to 0-100 range
+      const normalizedLFHF = this.normalizeLFHF(lfhfRatio);
+      const normalizedSDNN = this.normalizeSDNN(sdnn);
+      const normalizedRMSSD = this.normalizeRMSSD(rmssd);
+      
+      // Calculate SNS value (sympathetic nervous system) - scale 0-100
+      return this.calculateSNS(normalizedLFHF, normalizedSDNN, normalizedRMSSD);
+    } catch (e) {
+      console.error('Error calculating SNS power:', e);
+      return 0;
+    }
+  }
+  
+  getPsnsPower() {
+    // For consistency with HealthDisplay, return a value in the range 0-100%
+    if (!this.recentRrs || this.recentRrs.length < 5) {
+      return 0;
+    }
+    
+    try {
+      // Get values from individual metric calculators
+      const sdnn = this.sdnnCalculator.calculateStdDev(this.recentRrs);
+      const rmssd = this.rmssdCalculator.calculateRMSSD(this.recentRrs);
+      
+      // Calculate frequency-domain metrics
+      const lfPower = this.lfPowerCalculator.calculateBandPower(this.recentRrs, 0.04, 0.15);
+      const hfPower = this.hfPowerCalculator.calculateBandPower(this.recentRrs, 0.15, 0.4);
+      const totalPower = this.totalPowerCalculator.calculate();
+      const lfhfRatio = (lfPower && hfPower) ? (lfPower / hfPower) : 1;
+      
+      // Normalize metrics to 0-100 range
+      const normalizedLFHF = this.normalizeLFHF(lfhfRatio);
+      const normalizedSDNN = this.normalizeSDNN(sdnn);
+      const normalizedRMSSD = this.normalizeRMSSD(rmssd);
+      const normalizedTotalPower = this.normalizeTotalPower(totalPower);
+      
+      // Calculate PSNS value (parasympathetic nervous system) - scale 0-100
+      return this.calculatePSNS(normalizedLFHF, normalizedSDNN, normalizedRMSSD, normalizedTotalPower);
+    } catch (e) {
+      console.error('Error calculating PSNS power:', e);
+      return 0;
+    }
   }
   
   // Clean up all resources

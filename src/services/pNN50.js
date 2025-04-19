@@ -10,7 +10,7 @@ export default class PNN50 extends RRInt {
   }
 
   calculate() {
-    // Using the shared method from Metric
-    return this.calculatePNN50(this.recentRrs)
+    // Use the calculateMetric method to simplify implementation
+    return this.calculateMetric(this.calculatePNN50, this.recentRrs);
   }
 } 

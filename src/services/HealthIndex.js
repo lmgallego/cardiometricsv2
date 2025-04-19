@@ -3,6 +3,8 @@ import SDNN from './SDNN'
 import RMSSD from './RMSSD'
 import StressIndex from './StressIndex'
 import EnergyIndex from './EnergyIndex'
+import LFPower from './LFPower'
+import HFPower from './HFPower'
 
 /**
  * Health Index calculator that combines StressIndex and EnergyIndex
@@ -22,6 +24,8 @@ export default class HealthIndex extends FrequencyDomain {
     this.rmssdCalculator = options.rmssdInstance || new RMSSD(device, options)
     this.stressCalculator = options.stressInstance || new StressIndex(device, options)
     this.energyCalculator = options.energyInstance || new EnergyIndex(device, options)
+    this.lfPowerCalculator = options.lfPowerInstance || new LFPower(device, options)
+    this.hfPowerCalculator = options.hfPowerInstance || new HFPower(device, options)
 
     // Track metric history
     this.metricHistory = {
@@ -47,6 +51,8 @@ export default class HealthIndex extends FrequencyDomain {
     this.rmssdCalculator.handleRrInterval(rri)
     this.stressCalculator.handleRrInterval(rri)
     this.energyCalculator.handleRrInterval(rri)
+    this.lfPowerCalculator.handleRrInterval(rri)
+    this.hfPowerCalculator.handleRrInterval(rri)
 
     // Calculate and emit new value if we have enough data
     if (this.recentRrs && this.recentRrs.length >= 5) {
@@ -233,6 +239,8 @@ export default class HealthIndex extends FrequencyDomain {
     if (this.rmssdCalculator) this.rmssdCalculator.destroy()
     if (this.stressCalculator) this.stressCalculator.destroy()
     if (this.energyCalculator) this.energyCalculator.destroy()
+    if (this.lfPowerCalculator) this.lfPowerCalculator.destroy()
+    if (this.hfPowerCalculator) this.hfPowerCalculator.destroy()
     
     // Call parent's destroy method
     super.destroy()

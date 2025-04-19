@@ -4,6 +4,7 @@ import RMSSD from './RMSSD'
 import LFPower from './LFPower'
 import HFPower from './HFPower'
 import TotalPower from './TotalPower'
+import { metrics } from './store.js' // Import central metrics store
 
 /**
  * HRV-based "Energy Index" calculator using similar inputs to StressIndex.
@@ -57,6 +58,7 @@ export default class EnergyIndex extends FrequencyDomain {
     if (this.recentRrs && this.recentRrs.length >= 5) {
       this.value = this.calculate()
       this.valueSubject.next(this.value)
+      metrics.energyLevel = this.value; // Update central store
     }
   }
 

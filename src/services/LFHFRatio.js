@@ -29,23 +29,28 @@ export default class LFHFRatio extends FrequencyDomain {
     }
   }
 
-  calculate() {
-    // Check if we have enough data
-    if (!this.recentRrs || this.recentRrs.length < 5) {
+  // Calculate LF/HF ratio using the power in each band
+  calculateLFHFRatio(samples) {
+    if (!samples || samples.length < this.minRRIntervals) {
       return 0;
     }
-    
-    // Calculate LF power (0.04-0.15 Hz) using the specialized calculator
-    const lfPower = this.lfPowerCalculator.calculateBandPower(this.recentRrs, 0.04, 0.15);
-    
-    // Calculate HF power (0.15-0.4 Hz) using the specialized calculator
-    const hfPower = this.hfPowerCalculator.calculateBandPower(this.recentRrs, 0.15, 0.4);
-    
-    // Calculate the ratio
-    if (hfPower <= 0) return 0;
-    
-    // Return the actual ratio
+
+    // Calculate the powers in the LF and HF bands
+    const lfPower = this.calculateBandPower(samples, 0.04, 0.15);
+    const hfPower = this.calculateBandPower(samples, 0.15, 0.40);
+
+    // Safety check to avoid division by zero
+    if (hfPower === 0) {
+      return 0;
+    }
+
+    // Calculate the LF/HF ratio
     return lfPower / hfPower;
+  }
+
+  calculate() {
+    // Use the calculateMetric method with our custom calculation function
+    return this.calculateMetric(this.calculateLFHFRatio, this.recentRrs);
   }
   
   // Clean up all resources

@@ -1,5 +1,6 @@
 import { Subject } from 'rxjs'
 import { mean, std, sqrt } from 'mathjs'
+import { metrics } from './store'
 
 /**
  * Base class for all metrics.
@@ -18,6 +19,11 @@ export default class Metric {
     this.maxSamples = options.maxSamples || 1000
     this.pulsesNumber = options.rrIntervals || 100
     this.lastVisibleTime = Date.now()
+    this.metricName = this.constructor.name.toLowerCase()
+    
+    // Track last values for mean calculation
+    this.valueHistory = []
+    this.maxValueHistory = options.maxValueHistory || 60
     
     // Set up visibility change listener
     if (typeof document !== 'undefined') {
@@ -40,6 +46,7 @@ export default class Metric {
       // Ensure we only emit an update with the configured number of intervals
       // This prevents the spike by respecting the configured window size
       const value = this.calculate();
+      this.updateMetricsStore(value);
       this.valueSubject.next(value);
     }
   }
@@ -106,6 +113,18 @@ export default class Metric {
       this.data.shift()
     }
   }
+  
+  /**
+   * Add a calculated value to history for mean calculations.
+   */
+  addValueToHistory(value) {
+    if (typeof value === 'number' && !isNaN(value)) {
+      this.valueHistory.push(value)
+      if (this.valueHistory.length > this.maxValueHistory) {
+        this.valueHistory.shift()
+      }
+    }
+  }
 
   /**
    * Get recent samples based on pulsesNumber.
@@ -114,11 +133,19 @@ export default class Metric {
     const n = Math.min(this.pulsesNumber, this.data.length)
     return this.data.slice(-n)
   }
+  
+  /**
+   * Get the appropriate samples for calculating statistics.
+   * Can be overridden by subclasses to provide custom sample data.
+   */
+  getSamplesForStats() {
+    return this.valueHistory.length > 0 ? this.valueHistory : this.recentSamples
+  }
 
   /**
    * Calculate mean of samples.
    */
-  calculateMean(samples = this.recentSamples) {
+  calculateMean(samples = this.getSamplesForStats()) {
     if (samples.length === 0) return 0
     return mean(samples)
   }
@@ -126,7 +153,7 @@ export default class Metric {
   /**
    * Calculate standard deviation of samples.
    */
-  calculateStdDev(samples = this.recentSamples) {
+  calculateStdDev(samples = this.getSamplesForStats()) {
     // Need at least 2 samples for a meaningful standard deviation
     if (samples.length < 2) return 0
     
@@ -176,13 +203,69 @@ export default class Metric {
     const stdDev = this.calculateStdDev(samples)
     return (stdDev / meanVal) * 100
   }
+  
+  /**
+   * Generic method to calculate a metric, update store, and return value.
+   * Centralizes the pattern used in most metric classes.
+   * @param {Function} calculationFn - The function that performs the actual calculation
+   * @param {Array} args - Arguments to pass to the calculation function
+   * @returns {number} The calculated metric value
+   */
+  calculateMetric(calculationFn, ...args) {
+    // Calculate the metric value
+    const value = calculationFn.apply(this, args);
+    
+    // Add to value history for mean/stddev calculation
+    this.addValueToHistory(value);
+    
+    // Update the centralized metrics store
+    this.updateMetricsStore(value);
+    
+    return value;
+  }
+
+  /**
+   * Update the centralized metrics store
+   */
+  updateMetricsStore(value) {
+    // Skip if metricName is not set
+    if (!this.metricName) return;
+    
+    // Convert class name to metric name (e.g. SDNN -> sdnn, LFHFRatio -> lfhfRatio)
+    let storeKey = this.metricName;
+    if (storeKey === 'sdnn' || storeKey === 'rmssd' || storeKey === 'pnn50' || storeKey === 'cv' || 
+        storeKey === 'qtc' || storeKey === 'mxdmn' || storeKey === 'amo50' || 
+        storeKey === 'totalpower' || storeKey === 'vlfpower' || storeKey === 'lfpower' || 
+        storeKey === 'hfpower' || storeKey === 'lfhfratio') {
+      
+      // Convert to camelCase for the store keys
+      storeKey = storeKey.toLowerCase();
+      if (storeKey === 'totalpower') storeKey = 'totalPower';
+      if (storeKey === 'vlfpower') storeKey = 'vlfPower';
+      if (storeKey === 'lfpower') storeKey = 'lfPower';
+      if (storeKey === 'hfpower') storeKey = 'hfPower';
+      if (storeKey === 'lfhfratio') storeKey = 'lfhfRatio';
+      
+      // Update the metric value in the store
+      if (storeKey in metrics) {
+        metrics[storeKey] = value;
+        
+        // Update mean and standard deviation using value history or samples
+        const samples = this.getSamplesForStats();
+        if (samples.length > 0) {
+          metrics.means[storeKey] = this.calculateMean(samples);
+          metrics.stdDevs[storeKey] = this.calculateStdDev(samples);
+        }
+      }
+    }
+  }
 
   // Override in child classes
   setupSubscription() {
     console.warn('setupSubscription method must be implemented in child class')
   }
 
-  // Override in child classes
+  // Override in child classes with call to updateMetricsStore
   calculate() {
     console.warn('calculate method must be implemented in child class')
     return 0

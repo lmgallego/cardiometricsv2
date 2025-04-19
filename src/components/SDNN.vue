@@ -2,9 +2,9 @@
   <div>
     <MetricDisplay 
       label="SDNN"
-      :value="value"
-      :meanValue="meanValue"
-      :stdDevValue="stdDevValue"
+      :value="sharedValue"
+      :meanValue="sharedMeanValue"
+      :stdDevValue="sharedStdDevValue"
       :unit="unit"
       :precision="precision"
     />

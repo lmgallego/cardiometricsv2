@@ -1,12 +1,19 @@
 <template>
-  <div ref="chart" style="width: 100%; height: 400px;"></div>
+  <CardWrapper title="Heart Rate Over Time">
+    <div ref="chart" style="width: 100%; height: 400px;"></div>
+  </CardWrapper>
 </template>
 
 <script>
 import Plotly from 'plotly.js-dist-min' // Ensure Plotly is installed via npm or yarn
+import CardWrapper from './CardWrapper.vue'
+import themeManager from '../services/ThemeManager.js'
 
 export default {
   name: 'HeartRateChart',
+  components: {
+    CardWrapper
+  },
   props: {
     device: {
       type: Object,
@@ -20,16 +27,24 @@ export default {
       startTime: null,
       plotInitialized: false,
       layout: {
-        title: 'Heart Rate Over Time',
+        title: '',
+        margin: { t: 10, r: 10, b: 50, l: 50 },
         xaxis: {
           title: 'Time (s)',
           range: [0, 300],
-          showgrid: false
+          showgrid: false,
+          color: this.getTextColor()
         },
         yaxis: {
           title: 'Heart Rate (bpm)',
           range: [50, 220],
-          showgrid: false
+          showgrid: false,
+          color: this.getTextColor()
+        },
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        font: {
+          color: this.getTextColor()
         },
         shapes: [
           // Resting Zone
@@ -89,7 +104,7 @@ export default {
             y: 75,
             text: 'Resting',
             showarrow: false,
-            font: { color: 'black', size: 12 }
+            font: { color: this.getTextColor(), size: 12 }
           },
           {
             xref: 'paper',
@@ -98,7 +113,7 @@ export default {
             y: 120,
             text: 'Fat Burn',
             showarrow: false,
-            font: { color: 'black', size: 12 }
+            font: { color: this.getTextColor(), size: 12 }
           },
           {
             xref: 'paper',
@@ -107,7 +122,7 @@ export default {
             y: 160,
             text: 'Cardio',
             showarrow: false,
-            font: { color: 'black', size: 12 }
+            font: { color: this.getTextColor(), size: 12 }
           },
           {
             xref: 'paper',
@@ -116,7 +131,7 @@ export default {
             y: 200,
             text: 'Peak',
             showarrow: false,
-            font: { color: 'black', size: 12 }
+            font: { color: this.getTextColor(), size: 12 }
           }
         ]
       },
@@ -138,15 +153,41 @@ export default {
           marker: { symbol: 'heart', size: 12, color: 'red' }
         }
       ],
-      config: { responsive: true, displayModeBar: false },
-      subscription: null
+      config: { 
+        responsive: true, 
+        displayModeBar: false 
+      },
+      subscription: null,
+      themeListener: null
     }
   },
   methods: {
+    getTextColor() {
+      return themeManager.isDarkTheme() ? '#FFFFFF' : '#333333'
+    },
+    
+    updateTheme() {
+      // Update colors for dark/light theme
+      this.layout.font.color = this.getTextColor()
+      this.layout.xaxis.color = this.getTextColor()
+      this.layout.yaxis.color = this.getTextColor()
+      
+      // Update annotation colors
+      this.layout.annotations.forEach(annotation => {
+        annotation.font.color = this.getTextColor()
+      })
+      
+      // Redraw the plot if initialized
+      if (this.plotInitialized) {
+        Plotly.react(this.$refs.chart, this.plotData, this.layout, this.config)
+      }
+    },
+    
     initializePlot() {
       Plotly.newPlot(this.$refs.chart, this.plotData, this.layout, this.config)
       this.plotInitialized = true
     },
+    
     updateChart(hr) {
       const now = Date.now()
       if (!this.startTime) this.startTime = now
@@ -182,6 +223,7 @@ export default {
         this.initializePlot()
       }
     },
+    
     subscribeToHeartRate() {
       if (this.device && this.device.observeHeartRate) {
         this.subscription = this.device.observeHeartRate().subscribe(hr => {
@@ -191,6 +233,7 @@ export default {
         console.error('Device does not support observeHeartRate()')
       }
     },
+    
     resetChart() {
       this.heartRateData = []
       this.timeData = []
@@ -208,11 +251,11 @@ export default {
   },
   watch: {
     device: {
-      immediate: false, // Changed from true to false
+      immediate: false,
       handler(newDevice) {
         this.resetChart()
         if (newDevice) {
-          this.$nextTick(() => { // Ensure DOM is updated
+          this.$nextTick(() => {
             this.initializePlot()
             this.subscribeToHeartRate()
           })
@@ -226,12 +269,24 @@ export default {
       this.initializePlot()
       this.subscribeToHeartRate()
     }
+    
+    // Listen for theme changes
+    this.themeListener = (theme) => {
+      this.updateTheme()
+    }
+    themeManager.addListener(this.themeListener)
   },
-  beforeUnmount() { // Use beforeDestroy if using Vue 2
+  beforeUnmount() {
     if (this.subscription) {
       this.subscription.unsubscribe()
       this.subscription = null
     }
+    
+    // Remove theme listener
+    if (this.themeListener) {
+      themeManager.removeListener(this.themeListener)
+    }
+    
     Plotly.purge(this.$refs.chart)
   }
 }
@@ -244,4 +299,3 @@ div {
   height: 400px;
 }
 </style>
-]

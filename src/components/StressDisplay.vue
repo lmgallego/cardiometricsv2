@@ -1,81 +1,159 @@
 <template>
-  <div class="bg-white rounded-xl shadow-md p-4">
+  <CardWrapper title="Stress Index">
+    <!-- Stress Index Value -->
     <div class="flex justify-between items-center mb-4">
-      <h2 class="text-xl font-bold">Stress Index</h2>
+      <div class="text-sm text-gray-500 dark:text-gray-400">Current Status</div>
       <div class="text-right">
-        <div :class="stressLevelColorClass" class="text-2xl font-bold">
+        <div :class="stressLevelColorClass" class="text-3xl font-bold">
           {{ stressValue }}%
         </div>
-        <div class="text-sm">{{ stressLevelLabel }}</div>
+        <div class="text-sm text-gray-600 dark:text-gray-300">{{ stressLevelLabel }}</div>
       </div>
     </div>
-    
+
+    <!-- Stress Level Bar -->
     <div class="mb-4">
-      <h3 class="text-lg font-semibold mb-2">Nervous System Balance</h3>
-      <div class="space-y-2">
-        <div class="flex items-center">
-          <div class="w-10 font-bold">SNS</div>
-          <div class="flex-grow h-3 bg-gray-200 rounded-full mx-2 overflow-hidden">
-            <div class="h-full bg-orange-500 rounded-full" :style="{ width: `${snsPercentage}%` }"></div>
+      <div class="w-full h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+        <div
+          class="h-full rounded-full transition-all duration-500"
+          :style="{ width: `${stressValue}%` }"
+          :class="stressLevelBarColorClass"
+        ></div>
+      </div>
+    </div>
+
+    <!-- Nervous System Balance -->
+    <div class="mb-4">
+      <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Nervous System Balance</h3>
+      
+      <div class="flex justify-between gap-2">
+        <!-- SNS Activity (Fight or Flight) -->
+        <div class="flex-1">
+          <div class="flex justify-between items-center mb-1">
+            <div class="text-xs text-gray-500 dark:text-gray-400">Fight or Flight (SNS)</div>
+            <div class="text-xs font-semibold text-gray-800 dark:text-gray-100">{{ snsValue }}%</div>
           </div>
-          <div class="w-8 text-right font-bold">{{ snsValue }}</div>
+          <div class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+            <div
+              class="h-full bg-red-500 rounded-full transition-all duration-500"
+              :style="{ width: `${snsValue}%` }"
+            ></div>
+          </div>
         </div>
         
-        <div class="flex items-center">
-          <div class="w-10 font-bold">PSNS</div>
-          <div class="flex-grow h-3 bg-gray-200 rounded-full mx-2 overflow-hidden">
-            <div class="h-full bg-blue-500 rounded-full" :style="{ width: `${psnsPercentage}%` }"></div>
+        <!-- PSNS Activity (Rest & Digest) -->
+        <div class="flex-1">
+          <div class="flex justify-between items-center mb-1">
+            <div class="text-xs text-gray-500 dark:text-gray-400">Rest & Digest (PSNS)</div>
+            <div class="text-xs font-semibold text-gray-800 dark:text-gray-100">{{ psnsValue }}%</div>
           </div>
-          <div class="w-8 text-right font-bold">{{ psnsValue }}</div>
+          <div class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+            <div
+              class="h-full bg-green-500 rounded-full transition-all duration-500"
+              :style="{ width: `${psnsValue}%` }"
+            ></div>
+          </div>
         </div>
       </div>
+    </div>
+
+    <!-- HRV Metrics -->
+    <div class="border-t border-gray-200 dark:border-gray-700 pt-3">
+      <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Contributing Factors</h3>
       
-      <div :class="balanceColorClass" class="mt-2 p-2 rounded-md bg-gray-100 text-center text-sm">
-        <div v-if="isBalanced">Your nervous system is balanced</div>
-        <div v-else-if="isSnsDominant">Sympathetic dominance (fight-or-flight)</div>
-        <div v-else>Parasympathetic dominance (rest-and-digest)</div>
+      <div class="grid grid-cols-2 gap-3">
+        <!-- SDNN -->
+        <div class="p-2 bg-gray-50 dark:bg-gray-800 rounded-lg">
+          <div class="text-xs text-gray-500 dark:text-gray-400">SDNN</div>
+          <div class="font-bold text-gray-800 dark:text-gray-100">{{ sdnn }}ms</div>
+        </div>
+        
+        <!-- RMSSD -->
+        <div class="p-2 bg-gray-50 dark:bg-gray-800 rounded-lg">
+          <div class="text-xs text-gray-500 dark:text-gray-400">RMSSD</div>
+          <div class="font-bold text-gray-800 dark:text-gray-100">{{ rmssd }}ms</div>
+        </div>
+        
+        <!-- LF/HF Ratio -->
+        <div class="p-2 bg-gray-50 dark:bg-gray-800 rounded-lg">
+          <div class="text-xs text-gray-500 dark:text-gray-400">LF/HF Ratio</div>
+          <div class="font-bold text-gray-800 dark:text-gray-100">{{ lfhf }}</div>
+        </div>
+        
+        <!-- Heart Rate -->
+        <div class="p-2 bg-gray-50 dark:bg-gray-800 rounded-lg">
+          <div class="text-xs text-gray-500 dark:text-gray-400">Heart Rate</div>
+          <div class="font-bold text-gray-800 dark:text-gray-100">{{ heartRate }}bpm</div>
+        </div>
       </div>
     </div>
-    
-    <div class="grid grid-cols-3 gap-2 pt-3 border-t border-gray-200">
-      <div class="text-center">
-        <div class="text-xs text-gray-600">LF/HF Ratio</div>
-        <div class="font-bold">{{ lfhfRatio }}</div>
-      </div>
-      <div class="text-center">
-        <div class="text-xs text-gray-600">SDNN</div>
-        <div class="font-bold">{{ sdnnValue }}ms</div>
-      </div>
-      <div class="text-center">
-        <div class="text-xs text-gray-600">RMSSD</div>
-        <div class="font-bold">{{ rmssdValue }}ms</div>
-      </div>
-    </div>
-  </div>
+  </CardWrapper>
 </template>
 
 <script>
 import StressIndex from '../services/StressIndex'
+import CardWrapper from './CardWrapper.vue'
 import MetricMixin from '../mixins/MetricMixin'
+import { metrics } from '../services/store.js' // Import central metrics store
 
 export default {
   name: 'StressDisplay',
-  
+  components: {
+    CardWrapper
+  },
   mixins: [MetricMixin],
+  props: {
+    device: {
+      type: Object,
+      required: true
+    }
+  },
   
   data() {
     return {
-      stressValue: 0,
-      snsValue: 0,
-      psnsValue: 0,
-      lfhfRatio: 0,
-      sdnnValue: 0,
-      rmssdValue: 0,
-      calculatorClass: StressIndex
+      calculatorClass: StressIndex,
+      metrics: metrics // Add metrics store to data
     }
   },
   
   computed: {
+    // Get stress value directly from the central metrics store
+    stressValue() {
+      return Math.round(this.metrics.stressLevel || 0);
+    },
+
+    // SNS and PSNS values from the central metrics store
+    snsValue() {
+      return Math.round(this.metrics.snsActivity || 0);
+    },
+    
+    psnsValue() {
+      return Math.round(this.metrics.psnsActivity || 0);
+    },
+    
+    // Get supporting metrics from the central store
+    sdnn() {
+      return Math.round(this.metrics.sdnn || 0);
+    },
+    
+    rmssd() {
+      return Math.round(this.metrics.rmssd || 0);
+    },
+    
+    lfhf() {
+      return this.metrics.lfhfRatio ? parseFloat(this.metrics.lfhfRatio.toFixed(2)) : 0;
+    },
+    
+    heartRate() {
+      return Math.round(this.metrics.heartRate || 0);
+    },
+    
+    stressLevelBarColorClass() {
+      if (this.stressValue < 30) return 'bg-green-500'
+      if (this.stressValue < 60) return 'bg-orange-500'
+      return 'bg-red-500'
+    },
+    
     stressLevelColorClass() {
       if (this.stressValue < 30) return 'text-green-500'
       if (this.stressValue < 60) return 'text-orange-500'
@@ -86,16 +164,6 @@ export default {
       if (this.stressValue < 30) return 'Low'
       if (this.stressValue < 60) return 'Moderate'
       return 'High'
-    },
-    
-    snsPercentage() {
-      // Scale to fit in UI (max 100%)
-      return Math.min(this.snsValue, 100)
-    },
-    
-    psnsPercentage() {
-      // Scale to fit in UI (max 100%)
-      return Math.min(this.psnsValue, 100)
     },
     
     isBalanced() {
@@ -115,44 +183,13 @@ export default {
   },
   
   methods: {
+    // We need the updateMetrics method back for compatibility with the mixin
     updateMetrics(calculator) {
-      // Get the main stress value
-      this.value = calculator.value || 0;
-      this.stressValue = Math.round(this.value);
-      
-      // Get the detailed metrics
-      if (calculator.metricHistory) {
-        // Access the raw metrics from the calculator
-        const recentRrs = calculator.recentRrs;
-        if (recentRrs && recentRrs.length > 5) {
-          // Calculate SNS and PSNS values
-          const lfPower = calculator.calculateBandPower(recentRrs, 0.04, 0.15);
-          const hfPower = calculator.calculateBandPower(recentRrs, 0.15, 0.4);
-          const totalPower = calculator.calculateBandPower(recentRrs, 0.003, 0.4);
-          
-          // Time domain metrics
-          this.sdnnValue = Math.round(calculator.calculateStdDev(recentRrs));
-          this.rmssdValue = Math.round(calculator.calculateRMSSD(recentRrs));
-          
-          // LF/HF ratio
-          this.lfhfRatio = (lfPower && hfPower) ? 
-            parseFloat((lfPower / hfPower).toFixed(2)) : 1;
-          
-          // Get normalized metrics
-          const normalizedLFHF = calculator.normalizeLFHF(this.lfhfRatio);
-          const normalizedSDNN = calculator.normalizeSDNN(this.sdnnValue);
-          const normalizedRMSSD = calculator.normalizeRMSSD(this.rmssdValue);
-          const normalizedTotalPower = calculator.normalizeTotalPower(totalPower);
-          
-          // Calculate SNS and PSNS values (0-100)
-          this.snsValue = Math.round(calculator.calculateSNS(
-            normalizedLFHF, normalizedSDNN, normalizedRMSSD
-          ));
-          
-          this.psnsValue = Math.round(calculator.calculatePSNS(
-            normalizedLFHF, normalizedSDNN, normalizedRMSSD, normalizedTotalPower
-          ));
-        }
+      if (!calculator) return;
+
+      // Calculate SNS and PSNS values if needed
+      if (calculator.getSnsPower && calculator.getPsnsPower) {
+        // These are already updated in the central store by StressIndex class
       }
     }
   }

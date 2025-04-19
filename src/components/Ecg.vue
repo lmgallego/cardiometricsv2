@@ -1,16 +1,20 @@
 <template>
-  <div>
-    <h4>ECG</h4>
-    <div ref="ecgChart"></div>
-  </div>
+  <CardWrapper title="ECG Waveform">
+    <div ref="ecgChart" style="width: 100%; height: 400px;"></div>
+  </CardWrapper>
 </template>
 
 <script>
 import log from '@/log'
 import Plotly from 'plotly.js-dist-min'
 import EcgService from '../services/Ecg.js'
+import CardWrapper from './CardWrapper.vue'
+import themeManager from '../services/ThemeManager.js'
 
 export default {
+  components: {
+    CardWrapper
+  },
   data() {
     return {
       ecgData: [],
@@ -26,7 +30,8 @@ export default {
       rPeaks: [], // For visualization of R peaks
       qPoints: [], // For visualization
       tEndPoints: [], // For visualization
-      updateTimer: null // Timer for scheduled chart updates
+      updateTimer: null, // Timer for scheduled chart updates
+      themeListener: null // For theme changes
     }
   },
   props: ['device'],
@@ -69,6 +74,12 @@ export default {
     this.initializePlot();
     // Start the timer to update the chart at regular intervals
     this.updateTimer = setInterval(this.updatePlot, this.updateInterval);
+    
+    // Listen for theme changes
+    this.themeListener = (theme) => {
+      this.updateTheme();
+    };
+    themeManager.addListener(this.themeListener);
   },
 
   beforeDestroy() {
@@ -76,9 +87,32 @@ export default {
     if (this.updateTimer) {
       clearInterval(this.updateTimer);
     }
+    
+    // Remove theme listener
+    if (this.themeListener) {
+      themeManager.removeListener(this.themeListener);
+    }
   },
   
   methods: {
+    getTextColor() {
+      return themeManager.isDarkTheme() ? '#FFFFFF' : '#333333';
+    },
+    
+    updateTheme() {
+      if (!this.plotInitialized || !this.$refs.ecgChart) return;
+      
+      const update = {
+        'xaxis.color': this.getTextColor(),
+        'yaxis.color': this.getTextColor(),
+        'font.color': this.getTextColor(),
+        'paper_bgcolor': 'rgba(0,0,0,0)',
+        'plot_bgcolor': 'rgba(0,0,0,0)'
+      };
+      
+      Plotly.relayout(this.$refs.ecgChart, update);
+    },
+    
     cleanup() {
       // Clean up subscriptions
       if (this.ecgSubscription) {
@@ -227,64 +261,76 @@ export default {
       };
       
       const layout = {
-        title: 'ECG Waveform with Q, R & T Points',
+        title: '',
+        margin: { t: 10, r: 10, b: 50, l: 50 },
         xaxis: {
           title: 'Time (s)',
           range: [0, 5], // Initial range
           showgrid: true,
-          zeroline: false
+          zeroline: false,
+          color: this.getTextColor()
         },
         yaxis: {
           title: 'Amplitude (µV)',
           showgrid: true,
-          zeroline: false
+          zeroline: false,
+          color: this.getTextColor()
         },
         legend: {
           orientation: 'h'
+        },
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        font: {
+          color: this.getTextColor()
         }
       };
       
       Plotly.newPlot(this.$refs.ecgChart, [ecgTrace, rPeaksTrace, qPointsTrace, tEndPointsTrace], layout, { responsive: true });
       this.plotInitialized = true;
     },
-
+    
     updatePlot() {
-      if (!this.plotInitialized || this.ecgData.length === 0) {
-        return; // Nothing to update
-      }
-
-      // Prepare point data for plotting
-      const rPeaksX = this.rPeaks.map(p => p.time);
-      const rPeaksY = this.rPeaks.map(p => p.value);
+      if (!this.plotInitialized || !this.$refs.ecgChart || this.ecgData.length === 0) return;
       
-      const qPointsX = this.qPoints.map(p => p.time);
-      const qPointsY = this.qPoints.map(p => p.value);
-      
-      const tEndPointsX = this.tEndPoints.map(p => p.time);
-      const tEndPointsY = this.tEndPoints.map(p => p.value);
-
-      // Update the chart with new data
       const update = {
-        x: [this.ecgTime, rPeaksX, qPointsX, tEndPointsX],
-        y: [this.ecgData, rPeaksY, qPointsY, tEndPointsY]
+        x: [this.ecgTime, [], [], []],
+        y: [this.ecgData, [], [], []]
       };
-
-      // Update the x-axis range to keep the latest data in view
-      const latestTime = this.ecgTime[this.ecgTime.length - 1];
-      const xRangeStart = Math.max(0, latestTime - 5);
-      const xRangeEnd = latestTime;
-
-      try {
-        Plotly.update(this.$refs.ecgChart, update, {
-          xaxis: {
-            range: [xRangeStart, xRangeEnd]
-          }
+      
+      // Add R peaks
+      update.x[1] = this.rPeaks.map(p => p.time);
+      update.y[1] = this.rPeaks.map(p => p.value);
+      
+      // Add Q points
+      update.x[2] = this.qPoints.map(p => p.time);
+      update.y[2] = this.qPoints.map(p => p.value);
+      
+      // Add T-end points
+      update.x[3] = this.tEndPoints.map(p => p.time);
+      update.y[3] = this.tEndPoints.map(p => p.value);
+      
+      // Update x-axis range to show the latest 5 seconds of data
+      if (this.ecgTime.length > 0) {
+        const latestTime = this.ecgTime[this.ecgTime.length - 1];
+        const xMin = Math.max(0, latestTime - 5);
+        const xMax = latestTime;
+        
+        Plotly.relayout(this.$refs.ecgChart, {
+          'xaxis.range': [xMin, xMax]
         });
-      } catch (error) {
-        console.error('Error updating Plotly chart:', error);
       }
+      
+      Plotly.update(this.$refs.ecgChart, update, {});
     }
   }
 }
 </script>
+
+<style scoped>
+/* Ensure consistent height */
+div {
+  width: 100%;
+}
+</style>
 

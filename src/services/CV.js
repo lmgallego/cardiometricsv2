@@ -10,7 +10,7 @@ export default class CV extends RRInt {
   }
 
   calculate() {
-    // Using the shared method from Metric
-    return this.calculateCV(this.recentRrs)
+    // Use the calculateMetric method to simplify implementation
+    return this.calculateMetric(this.calculateCV, this.recentRrs);
   }
 } 
