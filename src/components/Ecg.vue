@@ -1,59 +1,117 @@
 <template>
   <CardWrapper title="ECG Waveform">
-    <div ref="ecgChart" style="width: 100%; min-height: 400px;"></div>
+    <div class="ecg-container">
+      <div class="chart-area">
+        <!-- Left Half: Real-time View -->
+        <div class="chart-column chart-realtime" ref="realtimeContainer">
+          <div class="chart-controls">
+            <div>Real-time View ({{ REALTIME_DURATION_SECONDS }}s)</div>
+          </div>
+          <div class="chart-scroll-container">
+            <EcgChart
+              :ecgData="ecgData"
+              :timeData="ecgTime"
+              :rPeaks="rPeaks"
+              :qPoints="qPoints"
+              :tEndPoints="tEndPoints"
+              :startTime="realtimeStartTime"
+              :endTime="latestTime"
+              :width="realtimeWidth"
+              :height="svgHeight"
+              :yScale="yScale"
+              chartType="realtime"
+            />
+          </div>
+          <div class="chart-legend">
+            <div class="legend-item"><span class="legend-marker" style="background-color: red;"></span>ECG Signal</div>
+            <div class="legend-item"><span class="legend-marker" style="background-color: purple;"></span>R Peaks</div>
+            <div class="legend-item"><span class="legend-marker" style="background-color: blue;"></span>Q Points</div>
+            <div class="legend-item"><span class="legend-marker" style="background-color: green;"></span>T-end Points</div>
+          </div>
+        </div>
+
+        <!-- Right Half: History View -->
+        <div class="chart-column chart-history" ref="historyContainer">
+           <div class="chart-controls">
+             <div>History ({{ historyInterval }}s segments)</div>
+           </div>
+           <div class="history-lines-container">
+             <div 
+               v-for="segment in historySegments" 
+               :key="segment.startTime" 
+               class="history-segment"
+             >
+                <EcgChart
+                  :ecgData="segment.ecgDataSlice"
+                  :timeData="segment.timeDataSlice"
+                  :rPeaks="segment.rPeaksData"
+                  :qPoints="segment.qPointsData"
+                  :tEndPoints="segment.tEndPointsData"
+                  :startTime="segment.startTime"
+                  :endTime="segment.endTime"
+                  :fixedTimeWindow="historyInterval"
+                  :width="historySegmentWidth"
+                  :height="HISTORY_LINE_HEIGHT"
+                  :yScale="historyYScale"
+                  :showLabel="true"
+                  :showPointCount="false"
+                  :showMarkers="false"
+                  chartType="history"
+                />
+             </div>
+           </div>
+        </div>
+      </div>
+    </div>
   </CardWrapper>
 </template>
 
 <script>
 import log from '@/log'
-import Plotly from 'plotly.js-dist-min'
 import EcgService from '../services/Ecg.js'
 import CardWrapper from './CardWrapper.vue'
+import EcgChart from './EcgChart.vue'
 import themeManager from '../services/ThemeManager.js'
 import { opts } from '../services/store.js'
-import { computed, watch, ref, onMounted, onBeforeUnmount } from 'vue'
+import { computed, watch, ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
+
+// Define the duration for the real-time view
+const REALTIME_DURATION_SECONDS = 5;
+// Define sample rate assumed for data limiting
+const APPROX_SAMPLE_RATE = 250; 
+// Define height for history lines
+const HISTORY_LINE_HEIGHT = 80;
 
 export default {
   components: {
-    CardWrapper
+    CardWrapper,
+    EcgChart
   },
   props: ['device'],
   
   setup(props) {
-    // References
-    const ecgChart = ref(null);
-    const plotInitialized = ref(false);
+    const realtimeContainer = ref(null);
+    const historyContainer = ref(null);
     
-    // Computed property for dynamic history interval
+    // Restore historyInterval from store
     const historyInterval = computed(() => opts.historyInterval);
     
-    // Computed property for max data points based on interval and sampling rate
+    // Keep reference to constant
+    const realtimeDuration = ref(REALTIME_DURATION_SECONDS);
+
     const maxDataPoints = computed(() => {
-      // Assuming ECG typically samples at around 250Hz
-      // Calculate points needed for the history interval
-      const typicalSamplingRate = 250; // Hz
-      return historyInterval.value * typicalSamplingRate;
-    });
-    
-    // Watch for changes in history interval
-    watch(historyInterval, (newInterval) => {
-      if (plotInitialized.value && ecgChart.value) {
-        // Update the x-axis range to reflect new interval
-        // Keep the range fixed starting from 0
-        const displayInterval = Math.max(0.1, newInterval);
-        Plotly.relayout(ecgChart.value, {
-          'xaxis.range': [0, displayInterval]
-        });
-        
-        console.log(`ECG chart display interval updated to ${newInterval} seconds`);
-      }
+      // Allow storing much more data - 5 minutes worth?
+      return APPROX_SAMPLE_RATE * 60 * 5; 
     });
     
     return {
-      ecgChart,
-      plotInitialized,
+      realtimeContainer,
+      historyContainer,
       historyInterval,
-      maxDataPoints
+      realtimeDuration,
+      maxDataPoints,
+      HISTORY_LINE_HEIGHT,
+      REALTIME_DURATION_SECONDS
     };
   },
   
@@ -61,20 +119,112 @@ export default {
     return {
       ecgData: [],
       ecgTime: [],
-      maxPoints: 3000, // This will be overridden by computed maxDataPoints
-      updateInterval: 200, // Chart update interval in milliseconds
+      rPeaks: [],
+      qPoints: [],
+      tEndPoints: [],
+      updateInterval: 30,
       ecgService: null,
       ecgSubscription: null,
       rPeakSubscription: null,
       qPointSubscription: null,
       tEndSubscription: null,
-      rPeaks: [], // For visualization of R peaks
-      qPoints: [], // For visualization
-      tEndPoints: [], // For visualization
-      updateTimer: null, // Timer for scheduled chart updates
-      themeListener: null, // For theme changes
-      initialTimestamp: null, // To track start time for relative time
-      displayDuration: 60 // Default display window - will use historyInterval from store
+      updateTimer: null,
+      themeListener: null,
+      initialTimestamp: null,
+      pixelsPerSecond: 200,
+      displayHeight: 350,
+      svgHeight: 400,
+      showCurrentTimeLine: true,
+      yScale: 0.1,
+      timeScale: 0.5,
+      amplitudeScale: 0.5
+    }
+  },
+
+  computed: {
+    visibleWidthPx() {
+      return this.$refs.realtimeContainer ? this.$refs.realtimeContainer.clientWidth : 400;
+    },
+
+    historySegmentWidth() {
+      return this.$refs.historyContainer ? this.$refs.historyContainer.clientWidth - 10 : 390;
+    },
+
+    latestTime() {
+      return this.ecgTime.length > 0 ? this.ecgTime[this.ecgTime.length - 1] : 0;
+    },
+    
+    realtimeStartTime() {
+      return Math.max(0, this.latestTime - REALTIME_DURATION_SECONDS);
+    },
+    
+    realtimeWidth() {
+      return this.visibleWidthPx;
+    },
+    
+    historyYScale() {
+      // Use the same scale as realtime view
+      return this.yScale;
+    },
+
+    historySegments() {
+      if (this.ecgTime.length < 2 || this.historyInterval <= 0) {
+        return [];
+      }
+
+      try {
+        const segments = [];
+        const latestTime = this.latestTime;
+        const firstDataTime = this.ecgTime[0] ?? 0;
+        const totalDuration = latestTime - firstDataTime;
+
+        if (totalDuration <= 0) return [];
+
+        const numFullSegments = Math.floor(totalDuration / this.historyInterval);
+
+        for (let i = 0; i < numFullSegments; i++) {
+          const segmentStartTime = firstDataTime + i * this.historyInterval;
+          const segmentEndTime = segmentStartTime + this.historyInterval;
+          
+          const indices = this.findDataIndices(segmentStartTime, segmentEndTime);
+          if (indices.startIndex === -1) continue;
+          
+          segments.push({
+            startTime: segmentStartTime,
+            endTime: segmentEndTime,
+            ecgDataSlice: this.ecgData.slice(indices.startIndex, indices.endIndex),
+            timeDataSlice: this.ecgTime.slice(indices.startIndex, indices.endIndex),
+            rPeaksData: this.rPeaks.filter(p => p.index >= indices.startIndex && p.index < indices.endIndex),
+            qPointsData: this.qPoints.filter(p => p.index >= indices.startIndex && p.index < indices.endIndex),
+            tEndPointsData: this.tEndPoints.filter(p => p.index >= indices.startIndex && p.index < indices.endIndex)
+          });
+        }
+
+        const lastFullSegmentEndTime = firstDataTime + numFullSegments * this.historyInterval;
+        if (latestTime > lastFullSegmentEndTime) {
+          const currentStartTime = lastFullSegmentEndTime;
+          const currentEndTime = currentStartTime + this.historyInterval;
+          const indices = this.findDataIndices(currentStartTime, currentEndTime);
+
+          if (indices.startIndex !== -1) {
+            segments.push({
+              startTime: currentStartTime,
+              endTime: currentEndTime,
+              ecgDataSlice: this.ecgData.slice(indices.startIndex, indices.endIndex),
+              timeDataSlice: this.ecgTime.slice(indices.startIndex, indices.endIndex),
+              rPeaksData: this.rPeaks.filter(p => p.index >= indices.startIndex && p.index < indices.endIndex),
+              qPointsData: this.qPoints.filter(p => p.index >= indices.startIndex && p.index < indices.endIndex),
+              tEndPointsData: this.tEndPoints.filter(p => p.index >= indices.startIndex && p.index < indices.endIndex)
+            });
+          }
+        }
+        
+        return segments.reverse();
+        
+      } catch (err) {
+        console.error("Error calculating history segments:", err);
+        return [];
+      }
     }
   },
 
@@ -85,25 +235,20 @@ export default {
         this.cleanup();
         
         if (this.device) {
-          // Initialize the ECG service
           this.ecgService = new EcgService(this.device);
           
-          // Subscribe to ECG data
           this.ecgSubscription = this.ecgService
             .getEcgObservable()
             .subscribe(data => this.handleEcgData(data));
             
-          // Subscribe to R peaks for visualization
           this.rPeakSubscription = this.ecgService
             .getRPeakObservable()
             .subscribe(data => this.handleRPeak(data));
             
-          // Subscribe to Q points for visualization
           this.qPointSubscription = this.ecgService
             .getQPointObservable()
             .subscribe(data => this.handleQPoint(data));
             
-          // Subscribe to T-end points for visualization
           this.tEndSubscription = this.ecgService
             .getTEndObservable()
             .subscribe(data => this.handleTEnd(data));
@@ -113,27 +258,20 @@ export default {
   },
 
   mounted() {
-    // Store reference to chart
-    this.ecgChart = this.$refs.ecgChart;
+    this.updateTimer = setInterval(this.updateDisplay, this.updateInterval);
     
-    this.initializePlot();
-    // Start the timer to update the chart at regular intervals
-    this.updateTimer = setInterval(this.updatePlot, this.updateInterval);
-    
-    // Listen for theme changes
     this.themeListener = (theme) => {
-      this.updateTheme();
+      this.$forceUpdate();
     };
     themeManager.addListener(this.themeListener);
   },
 
-  beforeDestroy() {
+  beforeUnmount() {
     this.cleanup();
     if (this.updateTimer) {
       clearInterval(this.updateTimer);
     }
     
-    // Remove theme listener
     if (this.themeListener) {
       themeManager.removeListener(this.themeListener);
     }
@@ -148,30 +286,7 @@ export default {
       return themeManager.isDarkTheme() ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
     },
     
-    getGridWidth() {
-      return themeManager.isDarkTheme() ? 0.5 : 1;
-    },
-    
-    updateTheme() {
-      if (!this.plotInitialized || !this.$refs.ecgChart) return;
-      
-      const update = {
-        'xaxis.color': this.getTextColor(),
-        'yaxis.color': this.getTextColor(),
-        'font.color': this.getTextColor(),
-        'paper_bgcolor': 'rgba(0,0,0,0)',
-        'plot_bgcolor': 'rgba(0,0,0,0)',
-        'xaxis.gridcolor': this.getGridColor(),
-        'yaxis.gridcolor': this.getGridColor(),
-        'xaxis.gridwidth': this.getGridWidth(),
-        'yaxis.gridwidth': this.getGridWidth()
-      };
-      
-      Plotly.relayout(this.$refs.ecgChart, update);
-    },
-    
     cleanup() {
-      // Clean up subscriptions
       if (this.ecgSubscription) {
         this.ecgSubscription.unsubscribe();
         this.ecgSubscription = null;
@@ -192,13 +307,11 @@ export default {
         this.tEndSubscription = null;
       }
       
-      // Clean up service
       if (this.ecgService) {
         this.ecgService.destroy();
         this.ecgService = null;
       }
       
-      // Reset data arrays
       this.ecgData = [];
       this.ecgTime = [];
       this.rPeaks = [];
@@ -206,50 +319,61 @@ export default {
       this.tEndPoints = [];
     },
     
+    findDataIndices(startTime, endTime) {
+        if (!this.ecgTime || this.ecgTime.length === 0) {
+            return { startIndex: -1, endIndex: -1 };
+        }
+
+        let startIndex = -1;
+        let endIndex = -1; 
+
+        // Find first point >= startTime
+        for (let i = 0; i < this.ecgTime.length; i++) {
+          if (this.ecgTime[i] >= startTime) {
+            startIndex = i;
+            break;
+          }
+        }
+
+        if (startIndex === -1) {
+            return { startIndex: -1, endIndex: -1 };
+        }
+
+        // Find first point > endTime (exclusive)
+        for (let i = startIndex; i < this.ecgTime.length; i++) {
+            if (this.ecgTime[i] > endTime) {
+                endIndex = i;
+                break;
+            }
+        }
+
+        if (endIndex === -1) {
+            endIndex = this.ecgTime.length;
+        }
+        
+        // Edge case: start point is already past end time
+        if (startIndex < this.ecgTime.length && this.ecgTime[startIndex] > endTime) {
+           return { startIndex: -1, endIndex: -1 };
+        }
+
+        return { startIndex, endIndex }; // endIndex is exclusive
+    },
+    
     handleEcgData(data) {
-      // Initialize time tracking if needed
       if (!this.initialTimestamp && data.times && data.times.length > 0) {
-        this.initialTimestamp = Date.now() / 1000; // Current time in seconds
+        this.initialTimestamp = Date.now() / 1000;
       }
       
-      // Add new samples to the arrays
       this.ecgData.push(...data.samples);
+      this.ecgTime.push(...data.times);
       
-      // Calculate times relative to our window
-      const newTimes = [];
-      for (let i = 0; i < data.times.length; i++) {
-        const relativeTime = data.times[i];
-        newTimes.push(relativeTime);
-      }
-      this.ecgTime.push(...newTimes);
-      
-      // Limit to max points based on history interval
-      const maxPointsToKeep = this.maxDataPoints;
-      if (this.ecgData.length > maxPointsToKeep) {
-        const removeCount = this.ecgData.length - maxPointsToKeep;
-        this.ecgData.splice(0, removeCount);
-        this.ecgTime.splice(0, removeCount);
-        
-        // Also adjust point indices
-        this.rPeaks = this.rPeaks.filter(point => point.index >= removeCount)
-          .map(point => ({ ...point, index: point.index - removeCount }));
-        
-        this.qPoints = this.qPoints.filter(point => point.index >= removeCount)
-          .map(point => ({ ...point, index: point.index - removeCount }));
-        
-        this.tEndPoints = this.tEndPoints.filter(point => point.index >= removeCount)
-          .map(point => ({ ...point, index: point.index - removeCount }));
-      }
-      
-      // Log data size periodically for debugging
-      if (this.ecgData.length % 500 === 0) {
-        console.log(`ECG data points: ${this.ecgData.length}, time range: ${this.ecgTime[0]} to ${this.ecgTime[this.ecgTime.length-1]}`);
-        console.log(`Current history interval: ${this.historyInterval}s, max points: ${maxPointsToKeep}`);
+      // Log data occasionally to help debug history view
+      if (data.times.length > 0 && this.ecgTime.length % 500 === 0) {
+        console.log(`ECG total points: ${this.ecgData.length}, time range: ${this.ecgTime[0]} to ${this.ecgTime[this.ecgTime.length-1]}`);
       }
     },
     
     handleRPeak(data) {
-      // Store R peak for visualization
       const relativeIndex = this.ecgData.length - (this.ecgService.ecgSamples.length - data.index);
       if (relativeIndex >= 0 && relativeIndex < this.ecgData.length) {
         this.rPeaks.push({
@@ -257,16 +381,10 @@ export default {
           time: this.ecgTime[relativeIndex],
           value: this.ecgData[relativeIndex]
         });
-        
-        // Limit number of points stored
-        if (this.rPeaks.length > 10) {
-          this.rPeaks.shift();
-        }
       }
     },
     
     handleQPoint(data) {
-      // Store Q point for visualization
       const relativeIndex = this.ecgData.length - (this.ecgService.ecgSamples.length - data.index);
       if (relativeIndex >= 0 && relativeIndex < this.ecgData.length) {
         this.qPoints.push({
@@ -274,16 +392,10 @@ export default {
           time: this.ecgTime[relativeIndex],
           value: this.ecgData[relativeIndex]
         });
-        
-        // Limit number of points stored
-        if (this.qPoints.length > 5) {
-          this.qPoints.shift();
-        }
       }
     },
     
     handleTEnd(data) {
-      // Store T-end point for visualization
       const relativeIndex = this.ecgData.length - (this.ecgService.ecgSamples.length - data.index);
       if (relativeIndex >= 0 && relativeIndex < this.ecgData.length) {
         this.tEndPoints.push({
@@ -291,122 +403,98 @@ export default {
           time: this.ecgTime[relativeIndex],
           value: this.ecgData[relativeIndex]
         });
-        
-        // Limit number of points stored
-        if (this.tEndPoints.length > 5) {
-          this.tEndPoints.shift();
-        }
       }
     },
-
-    initializePlot() {
-      const ecgTrace = {
-        x: this.ecgTime,
-        y: this.ecgData,
-        type: 'scatter',
-        mode: 'lines',
-        name: 'ECG Signal',
-        line: { color: 'red', width: 1 }
-      };
-      
-      const rPeaksTrace = {
-        x: [],
-        y: [],
-        type: 'scatter',
-        mode: 'markers',
-        name: 'R Peaks',
-        marker: { color: 'purple', size: 10, symbol: 'circle' }
-      };
-      
-      const qPointsTrace = {
-        x: [],
-        y: [],
-        type: 'scatter',
-        mode: 'markers',
-        name: 'Q Points',
-        marker: { color: 'blue', size: 8, symbol: 'circle' }
-      };
-      
-      const tEndPointsTrace = {
-        x: [],
-        y: [],
-        type: 'scatter',
-        mode: 'markers',
-        name: 'T-end Points',
-        marker: { color: 'green', size: 8, symbol: 'circle' }
-      };
-      
-      const layout = {
-        title: '',
-        autosize: true,
-        margin: { t: 5, r: 5, b: 30, l: 40 },
-        xaxis: {
-          title: 'Time (s)',
-          automargin: true,
-          range: [0, Math.max(0.1, this.historyInterval)],
-          showgrid: true,
-          zeroline: false,
-          gridcolor: this.getGridColor(),
-          gridwidth: this.getGridWidth(),
-          color: this.getTextColor()
-        },
-        yaxis: {
-          title: 'Amplitude (µV)',
-          automargin: true,
-          showgrid: true,
-          zeroline: false,
-          gridcolor: this.getGridColor(),
-          gridwidth: this.getGridWidth(),
-          color: this.getTextColor()
-        },
-        legend: {
-          orientation: 'h'
-        },
-        paper_bgcolor: 'rgba(0,0,0,0)',
-        plot_bgcolor: 'rgba(0,0,0,0)',
-        font: {
-          color: this.getTextColor()
-        }
-      };
-      
-      Plotly.newPlot(this.$refs.ecgChart, [ecgTrace, rPeaksTrace, qPointsTrace, tEndPointsTrace], layout, { responsive: true });
-      this.plotInitialized = true;
-    },
     
-    updatePlot() {
-      if (!this.plotInitialized || !this.$refs.ecgChart || this.ecgData.length === 0) return;
-      
-      const latestTime = this.ecgTime[this.ecgTime.length - 1];
-      const displayInterval = Math.max(0.1, this.historyInterval);
-      const windowStartTime = Math.max(0, latestTime - displayInterval);
-
-      // Adjust times to be relative to the start of the current display window
-      const plotEcgTime = this.ecgTime.map(t => t - windowStartTime);
-      const plotRPeakTimes = this.rPeaks.map(p => p.time - windowStartTime);
-      const plotQPointTimes = this.qPoints.map(p => p.time - windowStartTime);
-      const plotTEndTimes = this.tEndPoints.map(p => p.time - windowStartTime);
-      
-      const updateData = {
-        x: [plotEcgTime, plotRPeakTimes, plotQPointTimes, plotTEndTimes],
-        y: [
-          this.ecgData,
-          this.rPeaks.map(p => p.value),
-          this.qPoints.map(p => p.value),
-          this.tEndPoints.map(p => p.value)
-        ]
-      };
-      
-      // Update only the data, keeping the layout (and fixed axis range) unchanged
-      Plotly.update(this.$refs.ecgChart, updateData, {});
+    updateDisplay() {
+      this.$forceUpdate();
     }
   }
 }
 </script>
 
 <style scoped>
-/* Ensure consistent height */
-div {
+.ecg-container {
   width: 100%;
+  height: 450px;
+  display: flex;
+  flex-direction: column;
+  font-family: monospace;
+  color: var(--text-color);
+}
+
+.chart-area {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  min-height: 0;
+}
+
+.chart-column {
+  display: flex;
+  flex-direction: column;
+  flex-basis: 50%;
+  min-width: 0;
+  width: 50%;
+}
+
+.chart-controls {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 5px;
+  font-size: 12px;
+}
+
+.chart-scroll-container {
+  overflow-y: hidden;
+  flex: 1;
+  width: 100%;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 4px;
+  background: var(--background-color, transparent);
+}
+
+.history-lines-container {
+  flex: 1;
+  width: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 5px;
+}
+
+.history-segment {
+  width: 100%;
+  border: 1px solid var(--border-color-secondary, #555);
+  border-radius: 3px;
+  background-color: rgba(20,20,50,0.4);
+  padding: 2px 5px;
+  position: relative;
+  margin-bottom: 5px;
+}
+
+.chart-legend {
+  display: flex;
+  justify-content: flex-start;
+  gap: 15px;
+  margin-top: 8px;
+  margin-left: 10px;
+  font-size: 12px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legend-marker {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
 }
 </style>
 
