@@ -4,13 +4,6 @@
       <div class="chart-controls">
         <div>History ({{ historyInterval }}s)</div>
         <div class="control-buttons">
-          <div class="toggle-control" @click="enableMedianFilter = !enableMedianFilter">
-            <span class="control-label">Median: {{ enableMedianFilter ? 'ON' : 'OFF' }}</span>
-          </div>
-          <div v-if="enableMedianFilter" class="smoothing-control">
-            <span class="control-label">Window: {{ medianWindowSize }}</span>
-            <input class="slider" type="range" min="3" max="11" step="2" v-model.number="medianWindowSize" />
-          </div>
           <label class="toggle-control">
             <input type="checkbox" v-model="enableInterpolation" checked>
             <span class="control-label">Interp</span>
@@ -65,21 +58,21 @@
             <g class="accel-lines x-lines">
               <polyline v-for="(segmentPoints, index) in xSegments" :key="`x-${index}`"
                         :points="segmentPoints"
-                        fill="none" stroke="red" stroke-width="1.5" />
+                        fill="none" stroke="red" stroke-width="2" stroke-opacity="0.9" />
             </g>
             
             <!-- Y-axis acceleration line segments -->
             <g class="accel-lines y-lines">
               <polyline v-for="(segmentPoints, index) in ySegments" :key="`y-${index}`"
                         :points="segmentPoints"
-                        fill="none" stroke="green" stroke-width="1.5" />
+                        fill="none" stroke="lime" stroke-width="2" stroke-opacity="0.9" />
             </g>
             
             <!-- Z-axis acceleration line segments -->
             <g class="accel-lines z-lines">
               <polyline v-for="(segmentPoints, index) in zSegments" :key="`z-${index}`"
                         :points="segmentPoints"
-                        fill="none" stroke="blue" stroke-width="1.5" />
+                        fill="none" stroke="dodgerblue" stroke-width="2" stroke-opacity="0.9" />
             </g>
             
             <!-- Axis labels -->
@@ -88,15 +81,15 @@
             <!-- Legend -->
             <g class="chart-legend" :transform="`translate(${scrollX + 120}, 15)`">
               <g>
-                <line x1="0" y1="0" x2="15" y2="0" stroke="red" stroke-width="1.5"/>
+                <line x1="0" y1="0" x2="15" y2="0" stroke="red" stroke-width="2" stroke-opacity="0.9"/>
                 <text x="20" y="5" font-size="12" :fill="textColor">X</text>
               </g>
               <g transform="translate(50, 0)">
-                <line x1="0" y1="0" x2="15" y2="0" stroke="green" stroke-width="1.5"/>
+                <line x1="0" y1="0" x2="15" y2="0" stroke="lime" stroke-width="2" stroke-opacity="0.9"/>
                 <text x="20" y="5" font-size="12" :fill="textColor">Y</text>
               </g>
               <g transform="translate(100, 0)">
-                <line x1="0" y1="0" x2="15" y2="0" stroke="blue" stroke-width="1.5"/>
+                <line x1="0" y1="0" x2="15" y2="0" stroke="dodgerblue" stroke-width="2" stroke-opacity="0.9"/>
                 <text x="20" y="5" font-size="12" :fill="textColor">Z</text>
               </g>
             </g>
@@ -325,11 +318,11 @@ export default {
       lastProcessedBatch: { x: [], y: [], z: [], time: [] },
       lastDataTime: 0,
       updateTimer: null,
-      enableMedianFilter: true,
       enableInterpolation: true,
-      medianWindowSize: 5,
       // Fixed time scale for scrolling mode (pixels per second)
-      pixelsPerSecond: 100
+      pixelsPerSecond: 100,
+      // Aggregation interval
+      aggregationInterval: 0.2 // seconds
     }
   },
   
@@ -421,7 +414,6 @@ export default {
       }
     },
     
-    // Process and update all acceleration data
     processAccelerometerData() {
       if (!this.accData || this.accData.length === 0) {
         return;
@@ -429,7 +421,7 @@ export default {
       
       // Get the batch of data to process
       const dataToProcess = [...this.accData];
-      this.accData = [];
+      this.accData = []; // Clear buffer for next batch
       
       if (Array.isArray(dataToProcess) && dataToProcess.length > 0) {
         // Set up time tracking if not already done
@@ -438,92 +430,83 @@ export default {
           console.log('Accelerometer tracking started at:', new Date(this.startTime).toISOString());
         }
         
-        const newXData = [];
-        const newYData = [];
-        const newZData = [];
-        const newTimeData = [];
+        const rawXData = [];
+        const rawYData = [];
+        const rawZData = [];
+        const rawTimeData = [];
         
-        // Process each reading in the batch
-        dataToProcess.forEach((reading, index) => {
+        // Process each reading in the batch: scale and calculate time
+        dataToProcess.forEach((reading) => {
           if (!reading || typeof reading !== 'object' || !('x' in reading) || !('y' in reading) || !('z' in reading)) {
-            return;
+            return; // Skip invalid readings
           }
           
-          // Scale the values down to a reasonable range
+          // Scale the values
           let x = reading.x * this.scaleFactor;
           let y = reading.y * this.scaleFactor;
           let z = reading.z * this.scaleFactor;
           
           // Calculate time relative to start
-          const now = Date.now();
+          const now = Date.now(); // Use timestamp of processing
           const elapsedSeconds = (now - this.startTime) / 1000;
           
-          // Add data with real elapsed time (no resets)
-          let timePoint = elapsedSeconds;
-          
-          // Add small offsets for multiple points in a batch to prevent overlap
-          if (index > 0) {
-            timePoint += (index * 0.01);
+          // Apply baseline normalization if available
+          if (this.baselineValues) {
+            x -= this.baselineValues.x;
+            y -= this.baselineValues.y;
+            z -= this.baselineValues.z;
           }
           
-          // Store in temporary arrays
-          newTimeData.push(timePoint);
-          newXData.push(x);
-          newYData.push(y);
-          newZData.push(z);
+          // Store raw (scaled, baselined) data with timestamps
+          rawTimeData.push(elapsedSeconds);
+          rawXData.push(x);
+          rawYData.push(y);
+          rawZData.push(z);
           
           this.sampleIndex++;
         });
         
-        // Try to calculate baseline values if we don't have them yet
+        // Try to calculate baseline values if we don't have them yet (using raw scaled data count)
         if (!this.baselineValues && this.sampleIndex >= this.calibrationCount) {
-          this.calculateBaseline();
+          // Note: Baseline calc now uses raw scaled data before potential aggregation
+          this.calculateBaseline(); // Recalculate baseline using all data so far
         }
         
-        // Apply baseline normalization if available
-        if (this.baselineValues) {
-          for (let i = 0; i < newXData.length; i++) {
-            newXData[i] -= this.baselineValues.x;
-            newYData[i] -= this.baselineValues.y;
-            newZData[i] -= this.baselineValues.z;
-          }
-        }
-        
-        // Step 0: Merge points with identical timestamps
-        const { mergedTimes, mergedXData, mergedYData, mergedZData } = this.mergePointsAtSameTime(
-          newTimeData, newXData, newYData, newZData
+        // Step 1: Aggregate data into fixed time intervals
+        const { aggregatedTimes, aggregatedX, aggregatedY, aggregatedZ } = this.aggregateDataByInterval(
+          rawTimeData, rawXData, rawYData, rawZData, this.aggregationInterval
         );
         
-        // Step 1: Remove outliers
-        const cleanedXData = this.removeOutliers(mergedXData);
-        const cleanedYData = this.removeOutliers(mergedYData);
-        const cleanedZData = this.removeOutliers(mergedZData);
+        // If aggregation produced no points, stop here
+        if (aggregatedTimes.length === 0) {
+            return;
+        }
+
+        // Step 2: Remove outliers from aggregated data
+        const cleanedXData = this.removeOutliers(aggregatedX);
+        const cleanedYData = this.removeOutliers(aggregatedY);
+        const cleanedZData = this.removeOutliers(aggregatedZ);
         
-        // Step 2: Apply median filter to reduce noise
-        const smoothedXData = this.applyMedianFilter(cleanedXData);
-        const smoothedYData = this.applyMedianFilter(cleanedYData);
-        const smoothedZData = this.applyMedianFilter(cleanedZData);
-        
-        // Add to main data arrays (use smoothed data)
-        this.timeData.push(...mergedTimes);
-        this.axData.push(...smoothedXData);
-        this.ayData.push(...smoothedYData);
-        this.azData.push(...smoothedZData);
+        // Add aggregated, cleaned data to main arrays
+        this.timeData.push(...aggregatedTimes);
+        this.axData.push(...cleanedXData);
+        this.ayData.push(...cleanedYData);
+        this.azData.push(...cleanedZData);
         
         // Debug info occasionally
-        if (this.sampleIndex % 100 === 0) {
-          console.log(`Accelerometer: ${this.timeData.length} points, time range ${this.timeData[0].toFixed(1)} to ${this.timeData[this.timeData.length-1].toFixed(1)} seconds`);
+        if (this.sampleIndex % 100 < dataToProcess.length) { // Log roughly every 100 samples
+          console.log(`Accelerometer: ${this.timeData.length} aggregated points processed.`);
         }
         
-        // Update the Y range based on new data
+        // Update the Y range based on the newly added aggregated data
         this.updateYRange();
         
-        // Update the SVG line segments with the new data
-        this.updateAxisSegments('x', smoothedXData, mergedTimes);
-        this.updateAxisSegments('y', smoothedYData, mergedTimes);
-        this.updateAxisSegments('z', smoothedZData, mergedTimes);
+        // Update the SVG line segments with the aggregated and cleaned data
+        this.updateAxisSegments('x', cleanedXData, aggregatedTimes);
+        this.updateAxisSegments('y', cleanedYData, aggregatedTimes);
+        this.updateAxisSegments('z', cleanedZData, aggregatedTimes);
         
-        // Keep all historical data
+        // Keep all historical data (pruning is disabled)
         this.pruneOldData();
         
         // Update the scroll position to keep latest data visible
@@ -532,62 +515,53 @@ export default {
         });
       }
     },
-    
-    // Merge data points with identical timestamps
-    mergePointsAtSameTime(times, xData, yData, zData) {
+
+    // Aggregate data points into fixed time intervals using median
+    aggregateDataByInterval(times, xData, yData, zData, intervalSeconds) {
       if (!times || times.length === 0) {
-        return { mergedTimes: [], mergedXData: [], mergedYData: [], mergedZData: [] };
+        return { aggregatedTimes: [], aggregatedX: [], aggregatedY: [], aggregatedZ: [] };
       }
-      
-      // Group data by timestamp (rounded to 3 decimal places to avoid floating point issues)
-      const timeGroups = {};
-      
+
+      const timeBins = {};
+
+      // Group data into time bins
       for (let i = 0; i < times.length; i++) {
-        // Round to 3 decimal places to handle tiny floating point differences
-        const roundedTime = Math.round(times[i] * 1000) / 1000;
-        
-        if (!timeGroups[roundedTime]) {
-          timeGroups[roundedTime] = {
-            x: [],
-            y: [],
-            z: []
-          };
+        const time = times[i];
+        // Determine the start time of the bin this point falls into
+        const binStartTime = Math.floor(time / intervalSeconds) * intervalSeconds;
+
+        if (!timeBins[binStartTime]) {
+          timeBins[binStartTime] = { x: [], y: [], z: [] };
         }
-        
-        if (typeof xData[i] === 'number' && !isNaN(xData[i])) timeGroups[roundedTime].x.push(xData[i]);
-        if (typeof yData[i] === 'number' && !isNaN(yData[i])) timeGroups[roundedTime].y.push(yData[i]);
-        if (typeof zData[i] === 'number' && !isNaN(zData[i])) timeGroups[roundedTime].z.push(zData[i]);
+
+        // Add valid data points to the corresponding bin
+        if (typeof xData[i] === 'number' && !isNaN(xData[i])) timeBins[binStartTime].x.push(xData[i]);
+        if (typeof yData[i] === 'number' && !isNaN(yData[i])) timeBins[binStartTime].y.push(yData[i]);
+        if (typeof zData[i] === 'number' && !isNaN(zData[i])) timeBins[binStartTime].z.push(zData[i]);
       }
-      
-      // Create merged arrays using the median values for each timestamp
-      const mergedTimes = [];
-      const mergedXData = [];
-      const mergedYData = [];
-      const mergedZData = [];
-      
-      Object.entries(timeGroups).forEach(([time, values]) => {
-        const timeValue = parseFloat(time);
-        mergedTimes.push(timeValue);
-        
-        // For each axis, take the median of all values at this timestamp
-        mergedXData.push(values.x.length > 0 ? this.calculateMedian(values.x) : NaN);
-        mergedYData.push(values.y.length > 0 ? this.calculateMedian(values.y) : NaN);
-        mergedZData.push(values.z.length > 0 ? this.calculateMedian(values.z) : NaN);
+
+      // Calculate median for each bin and prepare output arrays
+      const aggregatedTimes = [];
+      const aggregatedX = [];
+      const aggregatedY = [];
+      const aggregatedZ = [];
+
+      // Sort bins by time
+      const sortedBinKeys = Object.keys(timeBins).map(parseFloat).sort((a, b) => a - b);
+
+      sortedBinKeys.forEach(binStartTime => {
+        const binData = timeBins[binStartTime];
+        aggregatedTimes.push(binStartTime); // Use the start time of the interval as the representative time
+        aggregatedX.push(binData.x.length > 0 ? this.calculateMedian(binData.x) : NaN);
+        aggregatedY.push(binData.y.length > 0 ? this.calculateMedian(binData.y) : NaN);
+        aggregatedZ.push(binData.z.length > 0 ? this.calculateMedian(binData.z) : NaN);
       });
-      
-      // Sort by timestamp to ensure correct order
-      const indices = mergedTimes.map((_, i) => i).sort((a, b) => mergedTimes[a] - mergedTimes[b]);
-      
-      const sortedTimes = indices.map(i => mergedTimes[i]);
-      const sortedXData = indices.map(i => mergedXData[i]);
-      const sortedYData = indices.map(i => mergedYData[i]);
-      const sortedZData = indices.map(i => mergedZData[i]);
-      
+
       return {
-        mergedTimes: sortedTimes,
-        mergedXData: sortedXData,
-        mergedYData: sortedYData,
-        mergedZData: sortedZData
+        aggregatedTimes,
+        aggregatedX,
+        aggregatedY,
+        aggregatedZ
       };
     },
     
@@ -714,40 +688,6 @@ export default {
       } else {
         console.error('Device does not support observeAccelerometer()');
       }
-    },
-    
-    // Apply a median filter to remove noise and spikes
-    applyMedianFilter(data) {
-      if (!this.enableMedianFilter || data.length === 0) return data;
-      
-      const result = [...data];
-      const windowSize = this.medianWindowSize;
-      const halfWindow = Math.floor(windowSize / 2);
-      
-      // Apply the filter
-      for (let i = 0; i < data.length; i++) {
-        // Create a window of appropriate size, handle edge cases properly
-        const windowValues = [];
-        for (let j = -halfWindow; j <= halfWindow; j++) {
-          const idx = i + j;
-          if (idx >= 0 && idx < data.length) {
-            // Only include valid numbers in the window
-            if (typeof data[idx] === 'number' && !isNaN(data[idx])) {
-              windowValues.push(data[idx]);
-            }
-          }
-        }
-        
-        // Calculate median only if the window has valid numbers
-        if (windowValues.length > 0) {
-          result[i] = this.calculateMedian(windowValues);
-        } else {
-          // Keep original value if window had no valid numbers
-          result[i] = data[i];
-        }
-      }
-      
-      return result;
     },
     
     // Calculate median of an array efficiently (assumes input is a non-empty array of numbers)
@@ -957,6 +897,7 @@ export default {
 }
 
 .smoothing-control {
+  /* This class is no longer used, but keep style for now or remove if desired */
   display: flex;
   align-items: center;
   gap: 10px;
