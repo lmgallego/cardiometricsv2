@@ -219,7 +219,8 @@ export default {
           }
         }
         
-        return segments.reverse();
+        // Return only the last 3 segments, in reverse chronological order (most recent first)
+        return segments.slice(-3).reverse();
         
       } catch (err) {
         console.error("Error calculating history segments:", err);
