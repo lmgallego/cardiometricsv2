@@ -4,10 +4,10 @@
       <div class="chart-controls">
         <div>History ({{ historyInterval }}s)</div>
         <div class="control-buttons">
-          <label class="toggle-control">
-            <input type="checkbox" v-model="enableInterpolation" checked>
-            <span class="control-label">Interp</span>
-          </label>
+          <div class="median-control">
+            <span class="control-label">Window: {{ medianWindowSeconds.toFixed(1) }}s</span>
+            <input type="range" min="0.1" max="1" step="0.1" v-model.number="medianWindowSeconds" class="slider">
+          </div>
         </div>
       </div>
       <div class="chart-area">
@@ -16,7 +16,7 @@
             ref="accelSvg"
             :width="chartWidth" 
             :height="chartHeight"
-            :viewBox="`${scrollX} 0 ${visibleWidth} ${chartHeight}`"
+            :viewBox="`0 0 ${chartWidth} ${chartHeight}`"
             preserveAspectRatio="none"
             class="accel-svg">
             
@@ -24,10 +24,10 @@
             <g class="grid-lines">
               <!-- Horizontal grid lines with labels -->
               <g v-for="line in horizontalGridLines" :key="`h-${line.y}`">
-                <line x1="0" :x2="totalChartWidth" 
+                <line x1="0" :x2="chartWidth" 
                       :y1="line.y" :y2="line.y" 
                       :stroke="gridColor" stroke-width="0.5" stroke-dasharray="3,3" />
-                <text :x="scrollX + 30" :y="line.y - 3" 
+                <text x="30" :y="line.y - 3" 
                       font-size="8" text-anchor="end" :fill="textColor">
                   {{ line.label }}
                 </text>
@@ -50,36 +50,33 @@
               </text>
               
               <!-- Center line (zero acceleration) - highlight it more -->
-              <line x1="0" :x2="totalChartWidth" :y1="chartHeight/2" :y2="chartHeight/2" 
+              <line x1="0" :x2="chartWidth" :y1="chartHeight/2" :y2="chartHeight/2" 
                     :stroke="zeroLineColor" stroke-width="1" />
             </g>
             
-            <!-- X-axis acceleration line segments -->
-            <g class="accel-lines x-lines">
-              <polyline v-for="(segmentPoints, index) in xSegments" :key="`x-${index}`"
-                        :points="segmentPoints"
-                        fill="none" stroke="red" stroke-width="2" stroke-opacity="0.9" />
-            </g>
-            
-            <!-- Y-axis acceleration line segments -->
-            <g class="accel-lines y-lines">
-              <polyline v-for="(segmentPoints, index) in ySegments" :key="`y-${index}`"
-                        :points="segmentPoints"
-                        fill="none" stroke="lime" stroke-width="2" stroke-opacity="0.9" />
-            </g>
-            
-            <!-- Z-axis acceleration line segments -->
-            <g class="accel-lines z-lines">
-              <polyline v-for="(segmentPoints, index) in zSegments" :key="`z-${index}`"
-                        :points="segmentPoints"
-                        fill="none" stroke="dodgerblue" stroke-width="2" stroke-opacity="0.9" />
+            <!-- Median lines -->
+            <g class="median-lines">
+              <!-- X-axis median line -->
+              <path v-for="(path, index) in xMedianPaths" :key="`mx-${index}`"
+                    :d="path"
+                    fill="none" stroke="red" stroke-width="2" stroke-opacity="0.9" />
+              
+              <!-- Y-axis median line -->
+              <path v-for="(path, index) in yMedianPaths" :key="`my-${index}`"
+                    :d="path"
+                    fill="none" stroke="lime" stroke-width="2" stroke-opacity="0.9" />
+              
+              <!-- Z-axis median line -->
+              <path v-for="(path, index) in zMedianPaths" :key="`mz-${index}`"
+                    :d="path"
+                    fill="none" stroke="dodgerblue" stroke-width="2" stroke-opacity="0.9" />
             </g>
             
             <!-- Axis labels -->
-            <text :x="scrollX + 50" y="15" font-size="12" :fill="textColor">Acceleration (g)</text>
+            <text x="50" y="15" font-size="12" :fill="textColor">Acceleration (g)</text>
             
             <!-- Legend -->
-            <g class="chart-legend" :transform="`translate(${scrollX + 120}, 15)`">
+            <g class="chart-legend" transform="translate(120, 15)">
               <g>
                 <line x1="0" y1="0" x2="15" y2="0" stroke="red" stroke-width="2" stroke-opacity="0.9"/>
                 <text x="20" y="5" font-size="12" :fill="textColor">X</text>
@@ -108,8 +105,6 @@ import { computed, watch, ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 
 // Number of data points per polyline segment
 const BATCH_SIZE = 100;
-// Interpolation factor - higher means smoother curves but more computation
-const INTERP_FACTOR = 0.2;
 // Maximum number of segments to maintain for each axis
 const MAX_SEGMENTS = 1000;
 // Window size for moving average smoothing
@@ -127,14 +122,6 @@ export default {
     const scrollContainer = ref(null);
     const chartWidth = ref(800);
     const chartHeight = ref(400);
-    const visibleWidth = ref(800);
-    const totalChartWidth = ref(5000);
-    const scrollX = ref(0);
-    
-    // Line segments for each axis
-    const xSegments = ref([]);
-    const ySegments = ref([]);
-    const zSegments = ref([]);
     
     // Dynamic range tracking
     const yMin = ref(-1);
@@ -194,36 +181,24 @@ export default {
       return lines;
     });
     
-    // Update vertical grid lines to make intervals more sensible in scrolling mode
+    // Vertical grid lines
     const verticalGridLines = computed(() => {
       const lines = [];
+      const interval = historyInterval.value;
       
-      // Always create grid lines at fixed intervals for scrolling mode
-      const pixelsPerSecond = 100; // Match the data value in this.pixelsPerSecond
+      // Create grid lines at fixed intervals
       let timeStep;
       
-      // Calculate visible time span
-      const visibleTimeSpan = visibleWidth.value / pixelsPerSecond;
-      
       // Adjust time step based on visible time span for optimal grid density
-      if (visibleTimeSpan <= 5) timeStep = 0.5;       // 0.5 second steps for small spans
-      else if (visibleTimeSpan <= 10) timeStep = 1;   // 1 second steps
-      else if (visibleTimeSpan <= 30) timeStep = 5;   // 5 second steps
-      else if (visibleTimeSpan <= 60) timeStep = 10;  // 10 second steps
-      else timeStep = 30;                             // 30 second steps for large spans
+      if (interval <= 5) timeStep = 0.5;       // 0.5 second steps for small spans
+      else if (interval <= 10) timeStep = 1;   // 1 second steps
+      else if (interval <= 30) timeStep = 5;   // 5 second steps
+      else if (interval <= 60) timeStep = 10;  // 10 second steps
+      else timeStep = 30;                      // 30 second steps for large spans
       
-      // Calculate the time value at the left edge of the visible area
-      const leftEdgeTime = scrollX.value / pixelsPerSecond;
-      
-      // Round to nearest multiple of timeStep
-      const firstGridTime = Math.ceil(leftEdgeTime / timeStep) * timeStep;
-      
-      // Calculate right edge time
-      const rightEdgeTime = (scrollX.value + visibleWidth.value) / pixelsPerSecond;
-      
-      // Add grid lines from first grid time to right edge
-      for (let t = firstGridTime; t <= rightEdgeTime; t += timeStep) {
-        const x = t * pixelsPerSecond;
+      // Add grid lines at nice intervals
+      for (let t = 0; t <= interval; t += timeStep) {
+        const x = (t / interval) * chartWidth.value;
         lines.push({
           x,
           label: `${t.toFixed(1)}s`
@@ -244,15 +219,12 @@ export default {
       if (container) {
         const containerWidth = container.clientWidth;
         chartWidth.value = containerWidth;
-        visibleWidth.value = containerWidth;
         chartHeight.value = container.clientHeight;
       }
     };
     
     // Watch for changes in history interval
     watch(historyInterval, () => {
-      // When interval changes, don't clear segments - just let them adjust visually
-      // No need to reset data, just trigger a re-render with new time scaling
       updateChartSize();
     });
     
@@ -283,13 +255,7 @@ export default {
       scrollContainer,
       chartWidth,
       chartHeight,
-      visibleWidth,
-      totalChartWidth,
-      scrollX,
       historyInterval,
-      xSegments,
-      ySegments,
-      zSegments,
       yMin,
       yMax,
       textColor,
@@ -318,20 +284,26 @@ export default {
       lastProcessedBatch: { x: [], y: [], z: [], time: [] },
       lastDataTime: 0,
       updateTimer: null,
-      enableInterpolation: true,
-      // Fixed time scale for scrolling mode (pixels per second)
-      pixelsPerSecond: 100,
       // Aggregation interval
-      aggregationInterval: 0.2 // seconds
+      aggregationInterval: 0.2, // seconds
+      // Median line controls
+      medianWindowSeconds: 0.3,
+      xMedianPaths: [],
+      yMedianPaths: [],
+      zMedianPaths: []
     }
   },
   
   methods: {
     // Calculate SVG coordinates for a data point with normalized Y value
     calculateCoords(time, value, axis) {
-      // Always use fixed time scale for scrolling mode
-      // Calculate X position based on absolute time
-      const x = time * this.pixelsPerSecond;
+      // Calculate X position based on time relative to current timeframe
+      const latestTime = this.timeData[this.timeData.length - 1] || 0;
+      const windowStart = Math.max(0, latestTime - this.historyInterval);
+      
+      // Normalize time to chart width
+      const normalizedX = (time - windowStart) / this.historyInterval;
+      const x = normalizedX * this.chartWidth;
       
       // Calculate Y coordinate with dynamic range
       const range = this.yMax - this.yMin;
@@ -339,79 +311,6 @@ export default {
       const y = this.chartHeight - (normalizedValue * this.chartHeight);
       
       return `${x.toFixed(1)},${y.toFixed(1)}`;
-    },
-    
-    // Update the segments for a specific axis
-    updateAxisSegments(axis, data, times) {
-      const segmentArray = axis === 'x' ? this.xSegments : 
-                           axis === 'y' ? this.ySegments : this.zSegments;
-      
-      if (data.length === 0 || times.length === 0) return;
-      
-      // Keep track if this is new data that appends to existing
-      const isAppending = this.lastProcessedBatch[axis].length > 0 && 
-                         this.lastProcessedBatch.time.length > 0;
-      
-      // Calculate points for each segment
-      for (let i = 0; i < data.length; i += BATCH_SIZE) {
-        let segmentStr = '';
-        const end = Math.min(i + BATCH_SIZE, data.length);
-        
-        // Include the last point of the previous segment or batch for continuity
-        if (i > 0) {
-          segmentStr += this.calculateCoords(times[i-1], data[i-1], axis);
-          segmentStr += ' ';
-        } 
-        // If this is the first segment but we have previous data points, use the last one
-        else if (isAppending) {
-          const lastIdx = this.lastProcessedBatch[axis].length - 1;
-          segmentStr += this.calculateCoords(
-            this.lastProcessedBatch.time[lastIdx], 
-            this.lastProcessedBatch[axis][lastIdx],
-            axis
-          );
-          segmentStr += ' ';
-        }
-        
-        // Add the actual data points with optional simple interpolation
-        if (this.enableInterpolation) {
-          // With interpolation: add midpoints between each pair of data points
-          for (let j = i; j < end - 1; j++) {
-            // Add the current point
-            segmentStr += this.calculateCoords(times[j], data[j], axis);
-            segmentStr += ' ';
-            
-            // Add a simple interpolated point midway between points
-            // This creates smoother lines with less complexity
-            const midTime = (times[j] + times[j+1]) / 2;
-            const midValue = (data[j] + data[j+1]) / 2;
-            segmentStr += this.calculateCoords(midTime, midValue, axis);
-            segmentStr += ' ';
-          }
-          
-          // Add the final point of the segment
-          if (end > i) {
-            segmentStr += this.calculateCoords(times[end-1], data[end-1], axis);
-          }
-        } else {
-          // Without interpolation: just connect the raw data points
-          for (let j = i; j < end; j++) {
-            segmentStr += this.calculateCoords(times[j], data[j], axis);
-            if (j < end - 1) segmentStr += ' ';
-          }
-        }
-        
-        if (segmentStr) {
-          // Add segment to array - never remove old segments to keep all history
-          segmentArray.push(segmentStr);
-        }
-      }
-      
-      // Update lastProcessedBatch with the most recent points
-      if (data.length > 0) {
-        this.lastProcessedBatch[axis] = [data[data.length - 1]];
-        this.lastProcessedBatch.time = [times[times.length - 1]];
-      }
     },
     
     processAccelerometerData() {
@@ -501,18 +400,11 @@ export default {
         // Update the Y range based on the newly added aggregated data
         this.updateYRange();
         
-        // Update the SVG line segments with the aggregated and cleaned data
-        this.updateAxisSegments('x', cleanedXData, aggregatedTimes);
-        this.updateAxisSegments('y', cleanedYData, aggregatedTimes);
-        this.updateAxisSegments('z', cleanedZData, aggregatedTimes);
+        // Update median lines
+        this.updateMedianLines();
         
-        // Keep all historical data (pruning is disabled)
+        // Prune old data outside our history window
         this.pruneOldData();
-        
-        // Update the scroll position to keep latest data visible
-        this.$nextTick(() => {
-          this.updateScrollPosition();
-        });
       }
     },
 
@@ -606,8 +498,25 @@ export default {
     },
     
     pruneOldData() {
-      // Disabled - keep ALL data
-      return;
+      // Remove data outside of history window
+      if (this.timeData.length === 0) return;
+      
+      const latestTime = this.timeData[this.timeData.length - 1];
+      const cutoffTime = latestTime - this.historyInterval;
+      
+      // Find the index of the first data point to keep
+      let cutoffIndex = 0;
+      while (cutoffIndex < this.timeData.length && this.timeData[cutoffIndex] < cutoffTime) {
+        cutoffIndex++;
+      }
+      
+      // If we have data to remove
+      if (cutoffIndex > 0) {
+        this.timeData = this.timeData.slice(cutoffIndex);
+        this.axData = this.axData.slice(cutoffIndex);
+        this.ayData = this.ayData.slice(cutoffIndex);
+        this.azData = this.azData.slice(cutoffIndex);
+      }
     },
     
     calculateBaseline() {
@@ -643,10 +552,84 @@ export default {
       this.baselineValues = null;
       this.lastProcessedBatch = { x: [], y: [], z: [], time: [] };
       
-      // Clear segments
-      this.xSegments = [];
-      this.ySegments = [];
-      this.zSegments = [];
+      // Clear median paths
+      this.xMedianPaths = [];
+      this.yMedianPaths = [];
+      this.zMedianPaths = [];
+    },
+    
+    // Update median lines for all axes
+    updateMedianLines() {
+      if (this.timeData.length < 2) return;
+      
+      this.xMedianPaths = this.calculateMedianLinePaths('x');
+      this.yMedianPaths = this.calculateMedianLinePaths('y');
+      this.zMedianPaths = this.calculateMedianLinePaths('z');
+    },
+    
+    // Calculate median line path for a specific axis
+    calculateMedianLinePaths(axis) {
+      const timeWindow = this.medianWindowSeconds;
+      const dataArray = axis === 'x' ? this.axData : 
+                        axis === 'y' ? this.ayData : this.azData;
+      
+      if (dataArray.length < 2 || this.timeData.length < 2) return [];
+      
+      // Find the latest time
+      const latestTime = this.timeData[this.timeData.length - 1];
+      
+      // Calculate median paths for time windows
+      const paths = [];
+      let currentPath = '';
+      
+      // We'll create median paths for sliding windows
+      for (let windowStart = Math.max(0, latestTime - this.historyInterval); 
+           windowStart <= latestTime - timeWindow; 
+           windowStart += timeWindow) {
+        
+        const windowEnd = windowStart + timeWindow;
+        const pointsInWindow = { values: [], times: [] };
+        
+        // Find all points in this time window
+        for (let i = 0; i < this.timeData.length; i++) {
+          const time = this.timeData[i];
+          if (time >= windowStart && time <= windowEnd) {
+            const value = dataArray[i];
+            if (typeof value === 'number' && !isNaN(value)) {
+              pointsInWindow.values.push(value);
+              pointsInWindow.times.push(time);
+            }
+          }
+        }
+        
+        // If we have points in this window, calculate the median
+        if (pointsInWindow.values.length > 0) {
+          const medianValue = this.calculateMedian(pointsInWindow.values);
+          
+          // Create a path segment for this window
+          const startCoord = this.calculateCoords(windowStart, medianValue, axis);
+          const endCoord = this.calculateCoords(windowEnd, medianValue, axis);
+          
+          // Create a new path if needed
+          if (currentPath === '') {
+            currentPath = `M${startCoord} L${endCoord}`;
+          } else {
+            // Connect to previous segment
+            currentPath += ` L${endCoord}`;
+          }
+        } else if (currentPath !== '') {
+          // If we had a path but now have no points, save it and start a new one
+          paths.push(currentPath);
+          currentPath = '';
+        }
+      }
+      
+      // Add the last path if it exists
+      if (currentPath !== '') {
+        paths.push(currentPath);
+      }
+      
+      return paths;
     },
     
     subscribeToAccelerometer() {
@@ -673,10 +656,10 @@ export default {
           this.$forceUpdate();
           
           // Update the Y scale more frequently to ensure it adapts quickly
-          // Changed from every 10 updates to every 2 updates (roughly every 100ms)
           updateCount++;
           if (updateCount % 2 === 0) {
             this.updateYRange();
+            this.updateMedianLines();
           }
         }, 50); // 20fps refresh rate
         
@@ -696,26 +679,6 @@ export default {
       const sorted = [...arr].sort((a, b) => a - b);
       const mid = Math.floor(sorted.length / 2);
       return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-    },
-    
-    // Update the SVG viewBox to scroll with new data
-    updateScrollPosition() {
-      if (this.timeData.length === 0) return;
-      
-      // Get latest time and calculate its position
-      const latestTime = this.timeData[this.timeData.length - 1];
-      const latestPosition = latestTime * this.pixelsPerSecond;
-      
-      // Update total chart width to include all data plus some padding
-      this.totalChartWidth = Math.max(this.visibleWidth, latestPosition + 200);
-      
-      // Calculate new scroll position to keep latest data visible
-      // We want the latest data point to be slightly inset from the right edge
-      const rightEdgeInset = 50; // pixels from right edge
-      this.scrollX = Math.max(0, latestPosition - this.visibleWidth + rightEdgeInset);
-      
-      // Also update the Y range when scrolling
-      this.updateYRange();
     },
     
     // Update Y-scale dynamically based on current data
@@ -804,28 +767,16 @@ export default {
       }
     },
     
-    // Watch for changes in timeData length
-    'timeData.length'() {
-      // Update scroll position whenever new data comes in
-      this.$nextTick(() => {
-        this.updateScrollPosition();
-      });
+    // Update median lines when window size changes
+    medianWindowSeconds() {
+      this.updateMedianLines();
     },
     
-    // Watch for changes in scrolling mode
-    enableScrolling(newValue) {
-      // Rebuild all segments when scrolling mode changes to apply new coord calculations
-      this.xSegments = [];
-      this.ySegments = [];
-      this.zSegments = [];
-      
-      this.$nextTick(() => {
-        // Redraw all existing data with new coordinate system
-        this.updateAxisSegments('x', this.axData, this.timeData);
-        this.updateAxisSegments('y', this.ayData, this.timeData);
-        this.updateAxisSegments('z', this.azData, this.timeData);
-        this.updateScrollPosition();
-      });
+    // Recompute everything when history interval changes
+    historyInterval() {
+      // Update the median lines with new timeframe
+      this.pruneOldData();
+      this.updateMedianLines();
     }
   },
   
@@ -896,11 +847,10 @@ export default {
   user-select: none;
 }
 
-.smoothing-control {
-  /* This class is no longer used, but keep style for now or remove if desired */
+.median-control {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 5px 10px;
   border-radius: 4px;
   background-color: var(--control-bg);
