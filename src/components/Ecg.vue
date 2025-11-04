@@ -14,6 +14,7 @@
               :rPeaks="rPeaks"
               :qPoints="qPoints"
               :tEndPoints="tEndPoints"
+              :tPeaks="tPeaks"
               :startTime="realtimeStartTime"
               :endTime="latestTime"
               :width="realtimeWidth"
@@ -27,6 +28,7 @@
             <div class="legend-item"><span class="legend-marker" style="background-color: purple;"></span>R Peaks</div>
             <div class="legend-item"><span class="legend-marker" style="background-color: blue;"></span>Q Points</div>
             <div class="legend-item"><span class="legend-marker" style="background-color: green;"></span>T-end Points</div>
+            <div class="legend-item"><span class="legend-marker" style="background-color: orange;"></span>T Peaks</div>
           </div>
         </div>
 
@@ -47,6 +49,7 @@
                   :rPeaks="segment.rPeaksData"
                   :qPoints="segment.qPointsData"
                   :tEndPoints="segment.tEndPointsData"
+                  :tPeaks="segment.tPeaksData"
                   :startTime="segment.startTime"
                   :endTime="segment.endTime"
                   :fixedTimeWindow="historyInterval"
@@ -122,12 +125,14 @@ export default {
       rPeaks: [],
       qPoints: [],
       tEndPoints: [],
+      tPeaks: [],
       updateInterval: 30,
       ecgService: null,
       ecgSubscription: null,
       rPeakSubscription: null,
       qPointSubscription: null,
       tEndSubscription: null,
+      tPeakSubscription: null,
       updateTimer: null,
       themeListener: null,
       initialTimestamp: null,
@@ -196,7 +201,8 @@ export default {
             timeDataSlice: this.ecgTime.slice(indices.startIndex, indices.endIndex),
             rPeaksData: this.rPeaks.filter(p => p.index >= indices.startIndex && p.index < indices.endIndex),
             qPointsData: this.qPoints.filter(p => p.index >= indices.startIndex && p.index < indices.endIndex),
-            tEndPointsData: this.tEndPoints.filter(p => p.index >= indices.startIndex && p.index < indices.endIndex)
+            tEndPointsData: this.tEndPoints.filter(p => p.index >= indices.startIndex && p.index < indices.endIndex),
+            tPeaksData: this.tPeaks.filter(p => p.index >= indices.startIndex && p.index < indices.endIndex)
           });
         }
 
@@ -214,7 +220,8 @@ export default {
               timeDataSlice: this.ecgTime.slice(indices.startIndex, indices.endIndex),
               rPeaksData: this.rPeaks.filter(p => p.index >= indices.startIndex && p.index < indices.endIndex),
               qPointsData: this.qPoints.filter(p => p.index >= indices.startIndex && p.index < indices.endIndex),
-              tEndPointsData: this.tEndPoints.filter(p => p.index >= indices.startIndex && p.index < indices.endIndex)
+              tEndPointsData: this.tEndPoints.filter(p => p.index >= indices.startIndex && p.index < indices.endIndex),
+              tPeaksData: this.tPeaks.filter(p => p.index >= indices.startIndex && p.index < indices.endIndex)
             });
           }
         }
@@ -253,6 +260,10 @@ export default {
           this.tEndSubscription = this.ecgService
             .getTEndObservable()
             .subscribe(data => this.handleTEnd(data));
+            
+          this.tPeakSubscription = this.ecgService
+            .getTPeakObservable()
+            .subscribe(data => this.handleTPeak(data));
         }
       }
     }
@@ -308,6 +319,11 @@ export default {
         this.tEndSubscription = null;
       }
       
+      if (this.tPeakSubscription) {
+        this.tPeakSubscription.unsubscribe();
+        this.tPeakSubscription = null;
+      }
+      
       if (this.ecgService) {
         this.ecgService.destroy();
         this.ecgService = null;
@@ -318,6 +334,7 @@ export default {
       this.rPeaks = [];
       this.qPoints = [];
       this.tEndPoints = [];
+      this.tPeaks = [];
     },
     
     findDataIndices(startTime, endTime) {
@@ -404,6 +421,13 @@ export default {
           time: this.ecgTime[relativeIndex],
           value: this.ecgData[relativeIndex]
         });
+      }
+    },
+    
+    handleTPeak(data) {
+      this.tPeaks.push(data);
+      if (this.tPeaks.length > MAX_POINTS_STORED * 2) {
+        this.tPeaks.splice(0, this.tPeaks.length - MAX_POINTS_STORED * 2);
       }
     },
     

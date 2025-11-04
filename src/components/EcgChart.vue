@@ -55,6 +55,10 @@
       <circle v-if="showMarkers" v-for="(point, index) in displayTEndPoints" :key="`t-${index}`"
               :cx="point.x" :cy="point.y" r="2" fill="green" />
       
+      <!-- T peaks -->
+      <circle v-if="showMarkers" v-for="(point, index) in displayTPeaks" :key="`tp-${index}`"
+              :cx="point.x" :cy="point.y" r="2.5" fill="orange" />
+      
       <!-- Point count for debugging -->
       <text v-if="showPointCount" x="5" y="15" font-size="10" fill="yellow">
         Points: {{ ecgData.length }} in {{ ecgSegments.length }} segments
@@ -98,6 +102,11 @@ export default {
     },
     // Optional T-end points
     tEndPoints: {
+      type: Array,
+      default: () => []
+    },
+    // Optional T peaks
+    tPeaks: {
       type: Array,
       default: () => []
     },
@@ -284,6 +293,23 @@ export default {
     displayTEndPoints() {
       if (this.timeWindowDuration <= 0) return [];
       const pointsToDisplay = this.tEndPoints.filter(point => 
+          point.time >= this.startTime && point.time <= this.endTime
+      );
+      return pointsToDisplay.map(point => {
+          const relativeTime = point.time - this.startTime; 
+          const clampedRelativeTime = Math.max(0, Math.min(relativeTime, this.timeWindowDuration));
+          const timePosition = this.timeWindowDuration > 0 ? clampedRelativeTime / this.timeWindowDuration : 0;
+          return {
+            ...point,
+            x: timePosition * this.width,
+            y: this.yOffset - (point.value * this.yScale)
+          };
+        });
+    },
+    
+    displayTPeaks() {
+      if (this.timeWindowDuration <= 0) return [];
+      const pointsToDisplay = this.tPeaks.filter(point => 
           point.time >= this.startTime && point.time <= this.endTime
       );
       return pointsToDisplay.map(point => {

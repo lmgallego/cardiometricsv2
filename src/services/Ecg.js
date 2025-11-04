@@ -19,6 +19,7 @@ export default class EcgService {
     this.qPointSubject = new Subject()
     this.tEndSubject = new Subject()
     this.qtIntervalSubject = new Subject()
+    this.tPeakSubject = new Subject() // Add T-Peak subject
     
     // ECG sampling rate from device
     this.samplingRate = device.ecgSamplingRate
@@ -28,6 +29,8 @@ export default class EcgService {
     
     // Initialize the service
     this.initialize()
+    
+    this.processedRPeakIndices = new Set()
   }
   
   initialize() {
@@ -153,26 +156,15 @@ export default class EcgService {
   
   processForQT() {
     if (this.normalizedEcg.length < 200) return
-    
-    // Get a window of the most recent ECG samples for analysis
-    const windowDuration = 5 // seconds
+    const windowDuration = 5
     const windowSize = Math.floor(windowDuration * this.samplingRate)
-    
-    // Use normalized ECG data for analysis
     const samples = this.normalizedEcg.slice(-windowSize)
-    // Original ECG samples for visualization and metrics
     const originalSamples = this.ecgSamples.slice(-windowSize)
-    
-    // Step 1: Detect R peaks (QRS complex) in normalized data
     const rPeaks = this.detectRPeaks(samples)
-    
     if (rPeaks.length < 2) return
-
-    // Step 2: Refine R peak positions using original signal to ensure they're at the true peaks
     const refinedRPeaks = this.refineRPeaks(rPeaks, originalSamples)
-
-    // Emit detected R peaks using original ECG values and refined positions
     const fullArrayOffset = this.ecgSamples.length - windowSize
+
     refinedRPeaks.forEach(rPeakIndex => {
       const rPeakFullIndex = fullArrayOffset + rPeakIndex
       this.rPeakSubject.next({
@@ -181,51 +173,49 @@ export default class EcgService {
         value: this.ecgSamples[rPeakFullIndex]
       })
     })
-    
-    // Process each R peak to find corresponding Q and T points
-    // We'll process multiple peaks to increase the chance of detection
-    const processedPeaks = Math.min(refinedRPeaks.length, 5) // Increase from 3 to 5 
-    
+
+    const processedPeaks = Math.min(refinedRPeaks.length, 5)
     for (let i = refinedRPeaks.length - processedPeaks; i < refinedRPeaks.length; i++) {
       const rPeakIndex = refinedRPeaks[i]
-      
-      // Use normalized data for Q and T detection
+      const rPeakFullIndex = fullArrayOffset + rPeakIndex
+      if (this.processedRPeakIndices.has(rPeakFullIndex)) continue
+
+      // Use new T-peak detection (second max in RR interval)
+      const tPeak = this.findTPeak(samples, rPeakIndex, refinedRPeaks)
+      const tEnd = tPeak !== null ? this.findTEndTrapezium(samples, tPeak, this.samplingRate) : null
       const qPoint = this.findQPoint(samples, rPeakIndex)
-      const tEnd = this.findTEnd(samples, rPeakIndex, refinedRPeaks)
-      
-      if (qPoint !== null && tEnd !== null) {
-        // Calculate absolute indices in the full ECG array
+
+      if (qPoint !== null && tPeak !== null && tEnd !== null) {
         const qPointFullIndex = fullArrayOffset + qPoint
+        const tPeakFullIndex = fullArrayOffset + tPeak
         const tEndFullIndex = fullArrayOffset + tEnd
-        
-        // Calculate QT interval in milliseconds
         const qtInterval = ((tEnd - qPoint) / this.samplingRate) * 1000
-        
-        // Use a wider range for validation (230-660ms) to capture more variations
-        if (qtInterval >= 230 && qtInterval <= 660) {
-          // Emit the Q and T points using original ECG values for display
+        if (qtInterval >= 230 && qtInterval <= 660 && tEnd > tPeak && tPeak > qPoint) {
           this.qPointSubject.next({
             index: qPointFullIndex,
             time: this.ecgTimes[qPointFullIndex],
             value: this.ecgSamples[qPointFullIndex]
           })
-          
+          this.tPeakSubject.next({
+            index: tPeakFullIndex,
+            time: this.ecgTimes[tPeakFullIndex],
+            value: this.ecgSamples[tPeakFullIndex]
+          })
           this.tEndSubject.next({
             index: tEndFullIndex,
             time: this.ecgTimes[tEndFullIndex],
             value: this.ecgSamples[tEndFullIndex]
           })
-          
-          // Emit the QT interval
           this.qtIntervalSubject.next({
             qtInterval,
             qPointIndex: qPointFullIndex,
             tEndIndex: tEndFullIndex,
             qPointTime: this.ecgTimes[qPointFullIndex],
             tEndTime: this.ecgTimes[tEndFullIndex],
-            rPeakIndex: fullArrayOffset + rPeakIndex,
-            rPeakTime: this.ecgTimes[fullArrayOffset + rPeakIndex]
+            rPeakIndex: rPeakFullIndex,
+            rPeakTime: this.ecgTimes[rPeakFullIndex]
           })
+          this.processedRPeakIndices.add(rPeakFullIndex)
         }
       }
     }
@@ -415,170 +405,70 @@ export default class EcgService {
     return qPointIndex
   }
   
+  // Helper to get median derivative over next 'count' points
+  getMedianDerivative(samples, startIndex, count) {
+    const derivatives = []
+    // Calculate derivatives for up to 'count' points, handling boundaries
+    for (let i = 0; i < count; i++) {
+      const currentIndex = startIndex + i
+      if (currentIndex + 1 >= samples.length) break // Stop if we reach the end
+      derivatives.push(samples[currentIndex + 1] - samples[currentIndex])
+    }
+
+    if (derivatives.length === 0) return 0 // Or handle as needed, e.g., NaN
+
+    derivatives.sort((a, b) => a - b)
+    const mid = Math.floor(derivatives.length / 2)
+
+    return derivatives.length % 2 !== 0 
+      ? derivatives[mid] 
+      : (derivatives[mid - 1] + derivatives[mid]) / 2
+  }
+
+  // Find T-peak as the second max voltage in the RR interval after R-peak
+  findTPeak(samples, rPeakIndex, rPeaks) {
+    const fs = this.samplingRate
+    const nextR = rPeaks.find(p => p > rPeakIndex) || samples.length - 1
+    let max1 = rPeakIndex, max2 = null
+    for (let i = rPeakIndex + Math.floor(0.1 * fs); i < nextR; i++) {
+      if (samples[i] > samples[max1]) {
+        max2 = max1; max1 = i
+      } else if ((max2 === null || samples[i] > samples[max2]) && i !== max1) {
+        max2 = i
+      }
+    }
+    return max2
+  }
+
+  // Find T-end index after T-peak
   findTEnd(samples, rPeakIndex, rPeaks) {
-    // Get heart rate to adjust T wave search window
-    const heartRate = this.estimateHeartRate(samples)
-    const rrInterval = 60000 / Math.max(40, heartRate) // in ms
-    
-    // Adaptive search windows based on heart rate
-    // Higher heart rates have T waves closer to the R peak
-    const minTSearchMs = Math.max(100, rrInterval * 0.15) // Increase minimum to 15% of RR
-    const maxTSearchMs = Math.min(500, rrInterval * 0.60) // Decrease maximum to 60% of RR and cap at 500ms
-    
-    const minTSearch = rPeakIndex + Math.floor((minTSearchMs / 1000) * this.samplingRate)
-    
-    // Don't search beyond the next R peak if it exists and is close
-    let maxTSearch = Math.min(
-      samples.length - 1, 
-      rPeakIndex + Math.floor((maxTSearchMs / 1000) * this.samplingRate)
-    )
-    
-    // Find next R peak to limit T wave search
-    const nextRPeakIndex = rPeaks.find(index => index > rPeakIndex)
-    if (nextRPeakIndex && nextRPeakIndex < maxTSearch) {
-      // Limit search to 80% of the way to the next R peak
-      maxTSearch = rPeakIndex + Math.floor(0.8 * (nextRPeakIndex - rPeakIndex))
+    const tPeak = this.findTPeak(samples, rPeakIndex, rPeaks)
+    if (tPeak === null) return null
+    const fs = this.samplingRate
+    const baseline = (() => {
+      const pre = samples.slice(Math.max(0, rPeakIndex - Math.floor(0.15 * fs)), Math.max(0, rPeakIndex - Math.floor(0.03 * fs)))
+      const post = (() => {
+        const nextR = rPeaks.find(p => p > rPeakIndex)
+        if (!nextR) return []
+        const s = tPeak + Math.floor(0.15 * fs), e = Math.min(samples.length, Math.min(nextR - Math.floor(0.12 * fs), rPeakIndex + Math.floor(0.8 * fs)))
+        return samples.slice(s, e)
+      })()
+      const segs = [...pre, ...post]
+      if (segs.length > 5) { segs.sort((a, b) => a - b); return segs[Math.floor(segs.length/2)] }
+      const w0 = Math.max(0, rPeakIndex - Math.floor(0.2 * fs)), w1 = Math.min(samples.length, rPeakIndex + Math.floor(0.8 * fs))
+      return samples.slice(w0, w1).reduce((a, b) => a + b, 0) / (w1 - w0)
+    })()
+    const tAmp = Math.abs(samples[tPeak] - baseline)
+    const isPos = samples[tPeak] > baseline
+    const start = tPeak + Math.max(3, Math.floor(0.03 * fs)), end = Math.min(samples.length - 2, tPeak + Math.floor(0.3 * fs))
+    if (start >= end) return null
+    // Find first point after T-peak where signal returns to baseline (within 15% of T amplitude)
+    for (let i = start; i <= end; i++) {
+      if (Math.abs(samples[i] - baseline) < tAmp * 0.15) return i
     }
-    
-    // Prepare the segment from the R peak to the maxTSearch for analysis
-    const segment = samples.slice(rPeakIndex, maxTSearch + 1)
-    
-    // Apply additional smoothing for T wave detection
-    const smoothedSegment = this.applyMovingAverage(segment, Math.ceil(this.samplingRate * 0.03))
-    
-    // Calculate derivatives
-    const firstDerivative = this.calculateDerivative(smoothedSegment)
-    
-    // Step 1: Find the T wave peak first
-    let tPeakIndex = null
-    let maxTValue = -Infinity
-    
-    // Typical T wave occurs at about 300ms after the R peak
-    const expectedTPeakTime = Math.min(
-      Math.floor(0.3 * this.samplingRate), 
-      Math.floor((maxTSearch - rPeakIndex) * 0.5)
-    )
-    
-    // Weight function that gives preference to points near the expected T location
-    for (let i = Math.floor(minTSearchMs / 1000 * this.samplingRate); i < smoothedSegment.length; i++) {
-      // Skip the segment right after R peak that might include S wave
-      if (i < Math.floor(0.08 * this.samplingRate)) continue
-      
-      // Check if this is a local maximum in the smoothed data
-      if (i > 0 && i < smoothedSegment.length - 1 && 
-          smoothedSegment[i] > smoothedSegment[i-1] && 
-          smoothedSegment[i] >= smoothedSegment[i+1]) {
-        
-        // Weight by proximity to expected T peak
-        const distanceWeight = 1 - Math.min(1, Math.abs(i - expectedTPeakTime) / (smoothedSegment.length * 0.5))
-        const weightedValue = smoothedSegment[i] * (0.6 + 0.4 * distanceWeight)
-        
-        if (weightedValue > maxTValue) {
-          maxTValue = weightedValue
-          tPeakIndex = i
-        }
-      }
-    }
-    
-    // If no T peak found by local maxima, try finding the highest point
-    if (tPeakIndex === null) {
-      for (let i = Math.floor(minTSearchMs / 1000 * this.samplingRate); i < smoothedSegment.length; i++) {
-        // Skip the segment right after R peak that might include S wave
-        if (i < Math.floor(0.08 * this.samplingRate)) continue
-        
-        if (smoothedSegment[i] > maxTValue) {
-          maxTValue = smoothedSegment[i]
-          tPeakIndex = i
-        }
-      }
-    }
-    
-    // If still no peak, give up
-    if (tPeakIndex === null) {
-      return null
-    }
-    
-    // Step 2: Find T wave end
-    let tEndOffset = null
-    
-    // Look for where the first derivative approaches zero after T peak
-    const endSearchStart = tPeakIndex + Math.floor(0.03 * this.samplingRate) // Start 30ms after T peak
-    const endSearchEnd = Math.min(smoothedSegment.length - 1, tPeakIndex + Math.floor(0.2 * this.samplingRate)) // Up to 200ms after T peak
-    
-    // 1. Derivative-based approach: locate where derivative crosses zero
-    for (let i = endSearchStart; i < endSearchEnd; i++) {
-      // Get the derivative sign (positive, negative, or zero)
-      const currentSign = Math.sign(firstDerivative[i])
-      const nextSign = Math.sign(firstDerivative[i + 1])
-      
-      // Detect sign change
-      if ((currentSign < 0 && nextSign >= 0) || Math.abs(firstDerivative[i]) < 0.2) {
-        tEndOffset = i;
-        break;
-      }
-    }
-    
-    // 2. If derivative approach failed, try tangent method
-    if (tEndOffset === null) {
-      // Find the point of inflection after T peak (where the concavity changes)
-      let inflectionPoint = null
-      let maxCurvature = 0
-      
-      for (let i = tPeakIndex + 1; i < Math.min(smoothedSegment.length - 1, tPeakIndex + Math.floor(0.15 * this.samplingRate)); i++) {
-        // Approximate second derivative
-        const secondDerivative = (firstDerivative[i] - firstDerivative[i-1]);
-        if (Math.abs(secondDerivative) > maxCurvature) {
-          maxCurvature = Math.abs(secondDerivative);
-          inflectionPoint = i;
-        }
-      }
-      
-      if (inflectionPoint !== null) {
-        // Define tangent at inflection point
-        const tangentSlope = firstDerivative[inflectionPoint];
-        const tangentIntercept = smoothedSegment[inflectionPoint] - tangentSlope * inflectionPoint;
-        
-        // Find where the signal crosses this tangent line
-        for (let i = inflectionPoint + 1; i < smoothedSegment.length; i++) {
-          const tangentValueAtI = tangentSlope * i + tangentIntercept;
-          if ((smoothedSegment[i-1] >= tangentValueAtI && smoothedSegment[i] < tangentValueAtI) ||
-              (smoothedSegment[i-1] <= tangentValueAtI && smoothedSegment[i] > tangentValueAtI)) {
-            tEndOffset = i;
-            break;
-          }
-        }
-      }
-    }
-    
-    // 3. If both approaches failed, use the classic method - threshold crossing
-    if (tEndOffset === null) {
-      // Find the baseline (average of segment parts likely not in the T wave)
-      const baselineStart = Math.floor(maxTSearch - rPeakIndex) * 0.8;
-      const baselineSegment = smoothedSegment.slice(Math.floor(baselineStart));
-      const baseline = baselineSegment.reduce((a, b) => a + b, 0) / baselineSegment.length;
-      
-      // Find where the signal returns to baseline
-      for (let i = tPeakIndex + 1; i < smoothedSegment.length; i++) {
-        if (Math.abs(smoothedSegment[i] - baseline) < Math.abs(smoothedSegment[tPeakIndex] - baseline) * 0.2) {
-          tEndOffset = i;
-          break;
-        }
-      }
-    }
-    
-    // If we still couldn't find T end, use an estimate
-    if (tEndOffset === null) {
-      // Estimate T end as 70ms after T peak for faster heart rates
-      // or 100ms for slower heart rates
-      const tEndDelay = heartRate > 70 ? 0.07 : 0.1;
-      tEndOffset = Math.min(
-        smoothedSegment.length - 1,
-        tPeakIndex + Math.floor(tEndDelay * this.samplingRate)
-      );
-    }
-    
-    // Convert T end offset to the global index
-    return rPeakIndex + tEndOffset;
+    // Fallback: fixed offset
+    const fallback = tPeak + Math.floor(0.16 * fs)
+    return fallback < samples.length ? fallback : null
   }
   
   estimateHeartRate(samples) {
@@ -645,6 +535,14 @@ export default class EcgService {
    */
   getQtIntervalObservable() {
     return this.qtIntervalSubject.asObservable()
+  }
+  
+  /**
+   * Get an observable for T-peak points.
+   * @returns {Observable} Observable that emits {index, time, value} objects.
+   */
+  getTPeakObservable() {
+    return this.tPeakSubject.asObservable().pipe(share())
   }
   
   /**
@@ -731,11 +629,215 @@ export default class EcgService {
     this.qPointSubject.complete()
     this.tEndSubject.complete()
     this.qtIntervalSubject.complete()
+    this.tPeakSubject.complete() // Complete T-peak subject
     
     // Clear data
     this.ecgSamples = []
     this.ecgTimes = []
     this.normalizedEcg = []
     this.rrIntervals = []
+    
+    // Clear the set on destroy
+    this.processedRPeakIndices.clear()
   }
+}
+
+// Helper: Placeholder for wavelet transform (should use a real library in production)
+function waveletTransform(signal, scale) {
+  // Simple Haar or Daubechies wavelet transform can be used here
+  // For demo, just return the signal (no-op)
+  return signal
+}
+
+// Wavelet-based delineation (Martínez et al.)
+EcgService.prototype.waveletDelineate = function(samples, fs) {
+  // 1. Apply wavelet transform at multiple scales
+  // 2. Find zero-crossings and modulus maxima
+  // 3. Use rules to select P, QRS, T onsets/peaks/ends
+  // This is a placeholder; in production, use a validated implementation
+  // Here, just return nulls for all points
+  return {
+    Pon: null, Pp: null, Pend: null,
+    QRSon: null, Rp: null, QRSoff: null,
+    Ton: null, Tp: null, Tend: null
+  }
+}
+
+// Trapezium's Area method for T-end (Vázquez-Seisdedos et al.)
+EcgService.prototype.findTEndTrapezium = function(samples, tPeakIdx, fs) {
+  const windowSlope = Math.floor(0.2 * fs)
+  const windowIso = [Math.floor(0.2 * fs), Math.floor(0.4 * fs)]
+  let maxDeriv = 0, xm = tPeakIdx
+  for (let i = tPeakIdx; i < tPeakIdx + windowSlope && i < samples.length - 1; i++) {
+    const d = Math.abs(samples[i+1] - samples[i])
+    if (d > maxDeriv) { maxDeriv = d; xm = i }
+  }
+  let xr = tPeakIdx + windowIso[0], minDeriv = Infinity
+  for (let i = tPeakIdx + windowIso[0]; i < tPeakIdx + windowIso[1] && i < samples.length; i++) {
+    const d = Math.abs(samples[i+1] - samples[i])
+    if (d < minDeriv) { minDeriv = d; xr = i }
+  }
+  let maxArea = -Infinity, tend = xm
+  for (let xi = xm; xi <= xr; xi++) {
+    const area = 0.5 * (samples[xm] - samples[xi]) * (xr - xi)
+    if (area > maxArea) { maxArea = area; tend = xi }
+  }
+  return tend
+}
+
+// --- Complex number helpers ---
+function cadd(a, b) { return { re: a.re + b.re, im: a.im + b.im } }
+function csub(a, b) { return { re: a.re - b.re, im: a.im - b.im } }
+function cmul(a, b) { return { re: a.re * b.re - a.im * b.im, im: a.re * b.im + a.im * b.re } }
+function cexp(theta) { return { re: Math.cos(theta), im: Math.sin(theta) } }
+function cconj(a) { return { re: a.re, im: -a.im } }
+function creal(a) { return a.re }
+function cdiv(a, b) {
+  const denom = b.re * b.re + b.im * b.im
+  return { re: (a.re * b.re + a.im * b.im) / denom, im: (a.im * b.re - a.re * b.im) / denom }
+}
+
+// Helper: pad array to next power of 2
+function padToNextPow2(arr) {
+  const n = arr.length, pow2 = 1 << (32 - Math.clz32(n - 1))
+  if (n === pow2) return arr
+  if (typeof arr[0] === 'object') return arr.concat(Array(pow2 - n).fill({ re: 0, im: 0 }))
+  return arr.concat(Array(pow2 - n).fill(0))
+}
+
+// Real FrFT implementation (discrete, based on Ozaktas et al., 1996)
+function frft(signal, alpha) {
+  let N = signal.length
+  if (alpha % 2 === 0) return signal.slice()
+  if (alpha % 2 === 1) return signal.slice().reverse()
+  if (alpha === 0) return signal.slice()
+  if (alpha === 1) return dft(signal)
+  const pi = Math.PI
+  const a = alpha * pi / 2
+  const tana2 = Math.tan(a / 2)
+  const sina = Math.sin(a)
+  if (Math.abs(sina) < 1e-10) return dft(signal)
+  // Chirp premultiplication
+  let x = []
+  for (let n = 0; n < N; n++) {
+    const phase = -pi * n * n * tana2 / N
+    const c = cexp(phase)
+    x.push({ re: signal[n] * c.re, im: signal[n] * c.im })
+  }
+  // Chirp convolution (via FFT)
+  let c = []
+  for (let n = 0; n < N; n++) {
+    const phase = pi * n * n * tana2 / N
+    c.push(cexp(phase))
+  }
+  // Pad to next power of 2
+  const N2 = 1 << (32 - Math.clz32(N - 1))
+  x = padToNextPow2(x)
+  c = padToNextPow2(c)
+  const X = fft(x)
+  const C = fft(c)
+  const Y = []
+  for (let n = 0; n < X.length; n++) Y.push(cmul(X[n], C[n]))
+  const y = ifft(Y)
+  // Chirp postmultiplication
+  const out = []
+  for (let n = 0; n < N; n++) {
+    const phase = -pi * n * n * tana2 / N
+    const cc = cexp(phase)
+    const v = cmul(y[n], cc)
+    out.push(v.re / Math.sqrt(Math.abs(sina)))
+  }
+  return out
+}
+
+// Simple DFT (for fallback, not efficient)
+function dft(signal) {
+  const N = signal.length
+  const out = []
+  for (let k = 0; k < N; k++) {
+    let re = 0, im = 0
+    for (let n = 0; n < N; n++) {
+      const phi = -2 * Math.PI * k * n / N
+      re += signal[n] * Math.cos(phi)
+      im += signal[n] * Math.sin(phi)
+    }
+    out.push(re)
+  }
+  return out
+}
+
+// Simple FFT and IFFT (Cooley-Tukey, radix-2, complex input)
+function fft(signal) {
+  const N = signal.length
+  if (N <= 1) return [signal[0]]
+  if (N % 2 !== 0) throw new Error('FFT length must be power of 2')
+  const even = fft(signal.filter((_, i) => i % 2 === 0))
+  const odd = fft(signal.filter((_, i) => i % 2 === 1))
+  const out = new Array(N)
+  for (let k = 0; k < N / 2; k++) {
+    const tw = cexp(-2 * Math.PI * k / N)
+    const t = cmul(tw, odd[k])
+    out[k] = cadd(even[k], t)
+    out[k + N / 2] = csub(even[k], t)
+  }
+  return out
+}
+function ifft(signal) {
+  const N = signal.length
+  const conj = signal.map(cconj)
+  const out = fft(conj).map(cconj)
+  return out.map(z => ({ re: z.re / N, im: z.im / N }))
+}
+
+EcgService.prototype.termaFrftTPeak = function(samples, rPeakIdx, fs) {
+  // 1. Zero out QRS region (±60ms around R-peak)
+  const qrsWin = Math.floor(0.06 * fs)
+  const sig = samples.slice()
+  for (let i = Math.max(0, rPeakIdx - qrsWin); i <= Math.min(samples.length - 1, rPeakIdx + qrsWin); i++) sig[i] = 0
+
+  // 2. Apply FrFT (placeholder, use real FrFT in production)
+  const frftSig = frft(sig, 0.01)
+
+  // 3. Square/enhance
+  const enhanced = frftSig.map(x => x * x)
+
+  // 4. Compute two moving averages (short/long window)
+  const W1 = Math.floor(0.12 * fs) // T-wave duration ~120ms
+  const W2 = Math.floor(0.4 * fs)  // QT interval ~400ms
+  const maShort = movingAverage(enhanced, W1)
+  const maLong = movingAverage(enhanced, W2)
+
+  // 5. Find blocks where short MA > long MA (block of interest)
+  let blocks = [], inBlock = false, blockStart = 0
+  for (let i = rPeakIdx + Math.floor(0.1 * fs); i < enhanced.length; i++) {
+    if (maShort[i] > maLong[i]) {
+      if (!inBlock) { inBlock = true; blockStart = i }
+    } else {
+      if (inBlock) { blocks.push([blockStart, i - 1]); inBlock = false }
+    }
+  }
+  if (inBlock) blocks.push([blockStart, enhanced.length - 1])
+
+  // 6. T-peak = max in first block after R-peak
+  let tPeakIdx = null
+  if (blocks.length > 0) {
+    const [start, end] = blocks[0]
+    let maxVal = -Infinity
+    for (let i = start; i <= end; i++) {
+      if (samples[i] > maxVal) { maxVal = samples[i]; tPeakIdx = i }
+    }
+  }
+  return tPeakIdx
+}
+
+// Helper: moving average
+function movingAverage(arr, win) {
+  const out = new Array(arr.length).fill(0)
+  let sum = 0
+  for (let i = 0; i < arr.length; i++) {
+    sum += arr[i]
+    if (i >= win) sum -= arr[i - win]
+    out[i] = i >= win - 1 ? sum / win : sum / (i + 1)
+  }
+  return out
 } 
